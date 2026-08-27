@@ -11,8 +11,8 @@
 - [x] 公开树隐私审计通过。
 - [x] 固定 Home Assistant `2026.8.2` 镜像在无网络容器中成功导入全部模块。
 - [x] 完整 Git 差异无空白错误。
-- [ ] GitHub Pull Request 检查通过并合并到公开 `main`。
-- [ ] 本地 `main` 与 `origin/main` 相同且工作区干净。
+- [x] GitHub Pull Request 检查通过并合并到公开 `main`。
+- [x] 本地 `main` 与 `origin/main` 相同且工作区干净。
 
 ## 2026-08-28 验证结果
 
@@ -24,6 +24,8 @@
   只读服务调用通过，同时 23/23 测试通过。
 - 公开树审计：39 个候选文件、17 条规则，通过；未包含媒体、运行状态、私网地址、
   本地主机名、机器路径或凭据字面量。
+- GitHub：Pull Request `#1` 的公开 CI 通过并完成合并；源码实现合并提交为
+  `39fda37e5e70b7b9d5e773a7825ee6e1f0430220`。
 - `LICENSE` SHA-256：
   `1EB85FC97224598DAD1852B5D6483BBCF0AA8608790DCC657A5A2A761AE9C8C6`。
 

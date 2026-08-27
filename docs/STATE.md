@@ -2,7 +2,7 @@
 
 - 项目版本：`V0.0.1`
 - 集成域：`xiaomi_lock_cloud_backup`
-- 发布级别：公开实验版候选
+- 发布级别：公开实验版 `V0.0.1`，已合并到 GitHub `main`
 - 目标型号：默认 `xiaomi.lock.s1`
 - 数据边界：只复用已加载的 `hass-xiaomi-miot` 内存会话
 - 历史回填：关闭；首次配置从当前时间建立游标
