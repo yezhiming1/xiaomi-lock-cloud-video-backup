@@ -1,0 +1,13 @@
+run_backup:
+  name: Run backup
+  description: >-
+    Check for new cloud recordings and back them up, or perform a read-only
+    dry run that reports only counts.
+  fields:
+    dry_run:
+      name: Dry run
+      description: Discover eligible recordings without downloading, deleting, or updating state.
+      required: false
+      default: false
+      selector:
+        boolean:

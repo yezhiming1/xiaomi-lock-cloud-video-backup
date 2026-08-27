@@ -1,0 +1,11 @@
+Xiaomi Lock Cloud Video Backup
+Copyright 2026 yezhiming1
+
+Licensed under the Apache License, Version 2.0.
+
+Compatibility behavior and the per-segment HLS decryption approach were
+informed by the Apache-2.0-licensed hass-xiaomi-miot project:
+https://github.com/al-one/hass-xiaomi-miot
+
+This product is unofficial and is not affiliated with Xiaomi, Home Assistant,
+or the hass-xiaomi-miot maintainers.

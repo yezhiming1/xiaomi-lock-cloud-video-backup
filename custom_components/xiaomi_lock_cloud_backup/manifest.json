@@ -1,0 +1,14 @@
+{
+  "domain": "xiaomi_lock_cloud_backup",
+  "name": "Xiaomi Lock Cloud Video Backup",
+  "after_dependencies": ["xiaomi_miot"],
+  "codeowners": ["@yezhiming1"],
+  "config_flow": true,
+  "documentation": "https://github.com/yezhiming1/xiaomi-lock-cloud-video-backup",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yezhiming1/xiaomi-lock-cloud-video-backup/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.0.1"
+}
