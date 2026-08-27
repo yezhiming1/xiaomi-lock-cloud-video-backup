@@ -1,0 +1,54 @@
+{
+  "title": "Xiaomi Lock Cloud Video Backup",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure cloud video backup",
+        "description": "Uses an already loaded hass-xiaomi-miot cloud session. No Xiaomi credentials are requested or stored.",
+        "data": {
+          "target_model": "Target model",
+          "schedule_time": "Daily local time (HH:MM:SS)",
+          "output_subdirectory": "Subdirectory below /media",
+          "retention_days": "Retention days",
+          "max_downloads_per_run": "Maximum downloads per run",
+          "keep_audio": "Keep audio when present"
+        }
+      }
+    },
+    "error": {
+      "invalid_settings": "One or more settings are invalid.",
+      "xiaomi_miot_not_ready": "Load and sign in to hass-xiaomi-miot before adding this integration."
+    },
+    "abort": {
+      "already_configured": "The integration is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Backup options",
+        "data": {
+          "schedule_time": "Daily local time (HH:MM:SS)",
+          "retention_days": "Retention days",
+          "max_downloads_per_run": "Maximum downloads per run",
+          "keep_audio": "Keep audio when present"
+        }
+      }
+    },
+    "error": {
+      "invalid_settings": "One or more settings are invalid."
+    }
+  },
+  "services": {
+    "run_backup": {
+      "name": "Run backup",
+      "description": "Back up new recordings or perform a read-only dry run.",
+      "fields": {
+        "dry_run": {
+          "name": "Dry run",
+          "description": "Discover recordings without writing media, deleting files, or updating state."
+        }
+      }
+    }
+  }
+}

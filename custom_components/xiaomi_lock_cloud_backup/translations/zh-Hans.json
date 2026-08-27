@@ -1,0 +1,54 @@
+{
+  "title": "小米门锁云录像备份",
+  "config": {
+    "step": {
+      "user": {
+        "title": "配置云录像备份",
+        "description": "复用已经加载的 hass-xiaomi-miot 云会话，不请求或保存小米账号凭据。",
+        "data": {
+          "target_model": "目标型号",
+          "schedule_time": "每日本地时间（HH:MM:SS）",
+          "output_subdirectory": "/media 下的子目录",
+          "retention_days": "保留天数",
+          "max_downloads_per_run": "每次最多下载数量",
+          "keep_audio": "有音轨时保留音频"
+        }
+      }
+    },
+    "error": {
+      "invalid_settings": "一个或多个设置无效。",
+      "xiaomi_miot_not_ready": "请先加载并登录 hass-xiaomi-miot，再添加本集成。"
+    },
+    "abort": {
+      "already_configured": "本集成已经配置。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "备份选项",
+        "data": {
+          "schedule_time": "每日本地时间（HH:MM:SS）",
+          "retention_days": "保留天数",
+          "max_downloads_per_run": "每次最多下载数量",
+          "keep_audio": "有音轨时保留音频"
+        }
+      }
+    },
+    "error": {
+      "invalid_settings": "一个或多个设置无效。"
+    }
+  },
+  "services": {
+    "run_backup": {
+      "name": "执行备份",
+      "description": "备份新的云录像，或仅执行只读预检。",
+      "fields": {
+        "dry_run": {
+          "name": "只读预检",
+          "description": "只发现可备份录像，不写入媒体、不删除文件，也不更新状态。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+"""Constants for Xiaomi Lock Cloud Video Backup."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+DOMAIN = "xiaomi_lock_cloud_backup"
+INTEGRATION_VERSION = "0.0.1"
+XIAOMI_MIOT_DOMAIN = "xiaomi_miot"
+
+CONF_KEEP_AUDIO = "keep_audio"
+CONF_MAX_DOWNLOADS_PER_RUN = "max_downloads_per_run"
+CONF_OUTPUT_SUBDIRECTORY = "output_subdirectory"
+CONF_RETENTION_DAYS = "retention_days"
+CONF_SCHEDULE_TIME = "schedule_time"
+CONF_TARGET_MODEL = "target_model"
+
+DEFAULT_KEEP_AUDIO = True
+DEFAULT_MAX_DOWNLOADS_PER_RUN = 100
+DEFAULT_OUTPUT_SUBDIRECTORY = "xiaomi_lock_cloud_backup"
+DEFAULT_RETENTION_DAYS = 30
+DEFAULT_SCHEDULE_TIME = "03:30:00"
+DEFAULT_TARGET_MODEL = "xiaomi.lock.s1"
+
+MEDIA_ROOT = Path("/media")
+SERVICE_RUN_BACKUP = "run_backup"
+STORAGE_VERSION = 1
+STORAGE_KEY_PREFIX = f"{DOMAIN}.state"
+
+EVENT_PAGE_LIMIT = 50
+MAX_EVENT_PAGES = 20
+MAX_FAILURES_PER_EVENT = 3
+MAX_SEEN_IDENTIFIERS = 4096
+MAX_MANAGED_FILES = 4096
+
+MUTABLE_OPTION_KEYS = (
+    CONF_KEEP_AUDIO,
+    CONF_MAX_DOWNLOADS_PER_RUN,
+    CONF_RETENTION_DAYS,
+    CONF_SCHEDULE_TIME,
+)
+
+
+def default_options() -> dict[str, object]:
+    """Return a fresh set of public, non-secret defaults."""
+    return {
+        CONF_KEEP_AUDIO: DEFAULT_KEEP_AUDIO,
+        CONF_MAX_DOWNLOADS_PER_RUN: DEFAULT_MAX_DOWNLOADS_PER_RUN,
+        CONF_OUTPUT_SUBDIRECTORY: DEFAULT_OUTPUT_SUBDIRECTORY,
+        CONF_RETENTION_DAYS: DEFAULT_RETENTION_DAYS,
+        CONF_SCHEDULE_TIME: DEFAULT_SCHEDULE_TIME,
+        CONF_TARGET_MODEL: DEFAULT_TARGET_MODEL,
+    }
