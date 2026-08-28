@@ -24,9 +24,10 @@ atomically publishes validated MP4 files.
   to Xiaomi Miot's loaded in-memory entity index while still requiring the
   entity's cloud object to be one of the loaded sessions.
 - The encrypted-media pipeline is covered by a synthetic end-to-end fixture.
-- Incremental real-account downloads have succeeded on the current target. The
-  V0.0.3 historical traversal remains target-environment `UNKNOWN` until its
-  deployment and backfill acceptance finish. Treat this release as experimental.
+- Incremental and V0.0.3 historical real-account downloads have succeeded on
+  the current target. The history service reached explicit endpoint completion;
+  final history and incremental dry runs each reported zero pending items.
+  Treat this release as experimental.
 - Face or stranger recognition is not included in `V0.0.3`.
 
 ## Safety properties
@@ -156,8 +157,9 @@ either value, remove and recreate the entry; existing media is left untouched.
 可退回到 Xiaomi Miot 已加载的内存实体索引，但实体仍必须绑定到已加载的云会话。
 零个和多个不同目标会返回不同的固定错误码，响应不会包含设备编号。
 
-`V0.0.3` 只实现增量与历史录像备份，不包含陌生人或人脸识别。私有云接口可能随时
-变化；V0.0.3 历史回填在目标环境验收结束前仍为 `UNKNOWN`。
+`V0.0.3` 只实现增量与历史录像备份，不包含陌生人或人脸识别。目标环境已完成一次
+真实历史回填、最终零待处理复核和全部目标媒体解析；私有云接口仍可能随时变化，首次
+每日计划周期和长期稳定性继续保持 `UNKNOWN`。
 
 ## Development
 
