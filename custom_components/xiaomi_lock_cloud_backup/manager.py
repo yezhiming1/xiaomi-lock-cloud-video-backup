@@ -22,7 +22,7 @@ from .cloud import (
     event_digest,
     signed_playlist_url,
 )
-from .const import MEDIA_ROOT, STORAGE_KEY_PREFIX, STORAGE_VERSION
+from .const import INTEGRATION_VERSION, MEDIA_ROOT, STORAGE_KEY_PREFIX, STORAGE_VERSION
 from .hls import download_hls_once, inspect_local_output
 from .models import BackupError
 from .paths import ensure_output_directory, safe_managed_path, unlink_managed_file
@@ -82,7 +82,7 @@ class BackupManager:
     def safe_diagnostics(self) -> dict[str, object]:
         state = self._require_state()
         return {
-            "integration_version": "0.0.1",
+            "integration_version": INTEGRATION_VERSION,
             "last_error_code": state.last_error_code,
             "last_run_status": state.last_run_status,
             "seen_count": len(state.seen),

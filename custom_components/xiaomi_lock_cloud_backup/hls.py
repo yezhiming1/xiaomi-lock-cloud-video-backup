@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import requests
 
+from .const import INTEGRATION_VERSION
 from .models import BackupError, DownloadResult
 
 
@@ -503,7 +504,9 @@ def download_hls_once(
 
     session = requests.Session()
     session.trust_env = False
-    session.headers.update({"User-Agent": "xiaomi-lock-cloud-video-backup/0.0.1"})
+    session.headers.update(
+        {"User-Agent": f"xiaomi-lock-cloud-video-backup/{INTEGRATION_VERSION}"}
+    )
     key_cache: dict[str, bytes] = {}
     deadline = time.monotonic() + timeout_seconds
     try:

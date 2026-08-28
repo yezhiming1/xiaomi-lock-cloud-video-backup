@@ -23,6 +23,7 @@ from custom_components.xiaomi_lock_cloud_backup import (
 )
 from custom_components.xiaomi_lock_cloud_backup.const import (
     DOMAIN,
+    INTEGRATION_VERSION,
     default_options,
 )
 
@@ -30,14 +31,14 @@ manifest = json.loads(
     Path('/work/custom_components/xiaomi_lock_cloud_backup/manifest.json').read_text()
 )
 assert manifest['domain'] == 'xiaomi_lock_cloud_backup'
-assert manifest['version'] == '0.0.1'
+assert manifest['version'] == INTEGRATION_VERSION == '0.0.2'
 
 class FixtureCloud:
     default_server = 'cn'
     locale = 'en_US'
 
     async def async_get_devices(self, renew=False):
-        return [{'model': 'xiaomi.lock.s1', 'did': 'fixture-device'}]
+        return []
 
     async def async_request_api(self, *_args, **_kwargs):
         return {'code': 0, 'data': {'thirdPartPlayUnits': []}}
@@ -54,6 +55,13 @@ class FixtureCloud:
     def rc4_params(_method, _url, params):
         return params
 
+class FixtureEntity:
+    model = 'xiaomi.lock.s1'
+    miot_did = 'fixture-device'
+
+    def __init__(self, cloud):
+        self.xiaomi_cloud = cloud
+
 async def main():
     config_directory = Path('/tmp/ha-smoke')
     component_link = config_directory / 'custom_components' / DOMAIN
@@ -68,8 +76,12 @@ async def main():
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == 'Xiaomi Lock Cloud Video Backup'
-    assert integration.version == '0.0.1'
-    hass.data['xiaomi_miot'] = {'sessions': {'fixture': FixtureCloud()}}
+    assert integration.version == '0.0.2'
+    cloud = FixtureCloud()
+    hass.data['xiaomi_miot'] = {
+        'sessions': {'fixture': cloud},
+        'entities': {'lock.fixture': FixtureEntity(cloud)},
+    }
     assert await async_setup(hass, {})
     entry = ConfigEntry(
         data=default_options(),
@@ -103,6 +115,7 @@ async def main():
         'selected': 0,
     }
     manager = hass.data[DOMAIN][entry.entry_id]
+    assert manager.safe_diagnostics()['integration_version'] == '0.0.2'
     await manager._lock.acquire()
     try:
         assert not await manager.async_shutdown()

@@ -17,12 +17,16 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Version: `V0.0.1` / integration manifest `0.0.1`
+- Version: `V0.0.2` / integration manifest `0.0.2`
 - Event discovery has been exercised with model `xiaomi.lock.s1`.
+- Target discovery de-duplicates the same physical device across loaded cloud
+  sessions. When the cloud device list has no matching model, it can fall back
+  to Xiaomi Miot's loaded in-memory entity index while still requiring the
+  entity's cloud object to be one of the loaded sessions.
 - The encrypted-media pipeline is covered by a synthetic end-to-end fixture.
 - A real-account media download and long-running production deployment remain
   unverified. Treat this release as experimental.
-- Face or stranger recognition is not included in `V0.0.1`.
+- Face or stranger recognition is not included in `V0.0.2`.
 
 ## Safety properties
 
@@ -118,7 +122,11 @@ either value, remove and recreate the entry; existing media is left untouched.
 固定错误码停止，不会退化为覆盖已有文件。
 首次配置只从当前时间开始，默认每天本地时间 03:30 执行，保留 30 天。
 
-`V0.0.1` 只实现录像备份，不包含陌生人或人脸识别。私有云接口可能随时变化，
+`V0.0.2` 会合并同一设备在多个已加载会话中的重复结果；当云设备列表没有目标型号时，
+可退回到 Xiaomi Miot 已加载的内存实体索引，但实体仍必须绑定到已加载的云会话。
+零个和多个不同目标会返回不同的固定错误码，响应不会包含设备编号。
+
+`V0.0.2` 只实现录像备份，不包含陌生人或人脸识别。私有云接口可能随时变化，
 真实设备下载和长期运行仍需要在你自己的环境中谨慎验证。
 
 ## Development

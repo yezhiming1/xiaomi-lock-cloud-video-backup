@@ -29,6 +29,25 @@ def _supports_required_cloud_api(cloud: object) -> bool:
     )
 
 
+def _target_did(value: object) -> str | None:
+    """Normalize one in-memory device id without exposing it."""
+    did = str(value or "")
+    if not did:
+        return None
+    if len(did) > 512:
+        raise BackupError("CLOUD_DEVICE_ID_INVALID")
+    return did
+
+
+def _select_single_target(matches: dict[str, CloudTarget]) -> CloudTarget:
+    """Select one physical target after de-duplicating by in-memory id."""
+    if not matches:
+        raise BackupError("TARGET_MATCH_NONE")
+    if len(matches) > 1:
+        raise BackupError("TARGET_MATCH_MULTIPLE")
+    return next(iter(matches.values()))
+
+
 async def async_find_single_target(hass: Any, model: str) -> CloudTarget:
     """Find exactly one model match without reading Xiaomi auth storage."""
     xiaomi_data = getattr(hass, "data", {}).get(XIAOMI_MIOT_DOMAIN)
@@ -36,7 +55,7 @@ async def async_find_single_target(hass: Any, model: str) -> CloudTarget:
     if not isinstance(sessions, dict) or not sessions:
         raise BackupError("XIAOMI_MIOT_SESSION_UNAVAILABLE")
 
-    matches: list[CloudTarget] = []
+    matches: dict[str, CloudTarget] = {}
     visited: set[int] = set()
     for cloud in sessions.values():
         if cloud is None or id(cloud) in visited:
@@ -53,14 +72,36 @@ async def async_find_single_target(hass: Any, model: str) -> CloudTarget:
         for device in devices:
             if not isinstance(device, dict) or device.get("model") != model:
                 continue
-            did = str(device.get("did") or "")
-            if not did or len(did) > 512:
+            did = _target_did(device.get("did"))
+            if did is None:
                 raise BackupError("CLOUD_DEVICE_ID_INVALID")
-            matches.append(CloudTarget(cloud=cloud, did=did, model=model))
+            matches.setdefault(did, CloudTarget(cloud=cloud, did=did, model=model))
 
-    if len(matches) != 1:
-        raise BackupError("TARGET_MATCH_COUNT_INVALID")
-    return matches[0]
+    if matches:
+        return _select_single_target(matches)
+
+    entities = xiaomi_data.get("entities")
+    if isinstance(entities, dict):
+        for entity in entities.values():
+            try:
+                if str(getattr(entity, "model", None) or "") != model:
+                    continue
+                cloud = getattr(entity, "xiaomi_cloud", None)
+                did = _target_did(getattr(entity, "miot_did", None))
+            except BackupError:
+                raise
+            except Exception:
+                continue
+            if (
+                did is None
+                or cloud is None
+                or id(cloud) not in visited
+                or not _supports_required_cloud_api(cloud)
+            ):
+                continue
+            matches.setdefault(did, CloudTarget(cloud=cloud, did=did, model=model))
+
+    return _select_single_target(matches)
 
 
 def event_digest(model: str, file_id: str) -> str:
