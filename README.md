@@ -3,8 +3,8 @@
 [![tests](https://github.com/yezhiming1/xiaomi-lock-cloud-video-backup/actions/workflows/tests.yml/badge.svg)](https://github.com/yezhiming1/xiaomi-lock-cloud-video-backup/actions/workflows/tests.yml)
 
 Experimental Home Assistant custom integration that incrementally backs up
-cloud recordings from a Xiaomi smart lock to a user-prepared directory below
-`/media`.
+cloud recordings from a Xiaomi smart lock and can explicitly backfill the
+currently queryable history to a user-prepared directory below `/media`.
 
 The integration does **not** ask for Xiaomi credentials. It reuses an already
 loaded in-memory cloud session from
@@ -17,16 +17,17 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Version: `V0.0.2` / integration manifest `0.0.2`
+- Version: `V0.0.3` / integration manifest `0.0.3`
 - Event discovery has been exercised with model `xiaomi.lock.s1`.
 - Target discovery de-duplicates the same physical device across loaded cloud
   sessions. When the cloud device list has no matching model, it can fall back
   to Xiaomi Miot's loaded in-memory entity index while still requiring the
   entity's cloud object to be one of the loaded sessions.
 - The encrypted-media pipeline is covered by a synthetic end-to-end fixture.
-- A real-account media download and long-running production deployment remain
-  unverified. Treat this release as experimental.
-- Face or stranger recognition is not included in `V0.0.2`.
+- Incremental real-account downloads have succeeded on the current target. The
+  V0.0.3 historical traversal remains target-environment `UNKNOWN` until its
+  deployment and backfill acceptance finish. Treat this release as experimental.
+- Face or stranger recognition is not included in `V0.0.3`.
 
 ## Safety properties
 
@@ -39,8 +40,12 @@ atomically publishes validated MP4 files.
   never appear in their command lines.
 - Output is confined below `/media`. Retention deletes only validated regular
   files recorded in this integration's state and never follows symlinks.
-- The first setup starts at the current time. Historical recordings are not
-  backfilled automatically.
+- The first setup starts daily incrementals at the current time. Historical
+  recordings are never backfilled automatically; the separate history service
+  has its own resumable cursor and does not rewind the daily cursor.
+- A history page is committed only after every event on that page is already
+  handled. Empty pages follow Xiaomi's continuation marker instead of being
+  treated as the end of history, and a non-decreasing marker fails closed.
 
 ## Requirements
 
@@ -102,6 +107,28 @@ response_variable: backup_check
 A dry run may contact Xiaomi's event-list API, but it does not download media,
 delete files, or update backup state. A normal run uses `dry_run: false`.
 
+Historical backfill is an explicit, serialized operation:
+
+```yaml
+action: xiaomi_lock_cloud_backup.run_history_backfill
+data:
+  dry_run: true
+  max_downloads: 100
+response_variable: history_check
+```
+
+Run the service with `dry_run: false` to commit progress. Each call scans at
+most 20 cloud pages and selects at most 100 recordings. Repeat only while the
+fixed status is `history_limit_reached` or `history_scan_limit_reached`; stop
+when `history_complete` is true. `available` is the bounded count discovered by
+that call, not a promise about Xiaomi's total retention history. Historical
+runs never invoke retention deletion; the configured retention policy remains
+owned by the normal daily backup path.
+
+Published files use the Xiaomi event creation time in UTC, not the download
+time: `xiaomi_lock_YYYYMMDDTHHMMSSmmmZ_<digest>.mp4`. Convert the `Z` timestamp
+to the desired local timezone when reading it.
+
 Failures use fixed codes. An individual recording is retried on later runs and
 quarantined after three failures so a permanently incompatible item cannot
 block all newer recordings.
@@ -120,14 +147,17 @@ either value, remove and recreate the entry; existing media is left untouched.
 用户先在 Home Assistant 中挂载，本集成不会创建共享、修改挂载或探测 NAS 凭据。
 目标文件系统还必须支持同目录硬链接和 `fsync`，用于无覆盖原子发布；不支持时会以
 固定错误码停止，不会退化为覆盖已有文件。
-首次配置只从当前时间开始，默认每天本地时间 03:30 执行，保留 30 天。
+首次配置的每日增量只从当前时间开始，默认每天本地时间 03:30 执行，保留 30 天。
+历史录像不会自动下载；`run_history_backfill` 使用独立、可恢复的向过去游标，只有一页
+全部处理完才提交进度，不会倒退每日增量游标。空白时间段若云端仍返回继续标记，会继续
+向更早时间查找；只有接口明确结束或到达绝对时间边界才报告完成。
 
 `V0.0.2` 会合并同一设备在多个已加载会话中的重复结果；当云设备列表没有目标型号时，
 可退回到 Xiaomi Miot 已加载的内存实体索引，但实体仍必须绑定到已加载的云会话。
 零个和多个不同目标会返回不同的固定错误码，响应不会包含设备编号。
 
-`V0.0.2` 只实现录像备份，不包含陌生人或人脸识别。私有云接口可能随时变化，
-真实设备下载和长期运行仍需要在你自己的环境中谨慎验证。
+`V0.0.3` 只实现增量与历史录像备份，不包含陌生人或人脸识别。私有云接口可能随时
+变化；V0.0.3 历史回填在目标环境验收结束前仍为 `UNKNOWN`。
 
 ## Development
 

@@ -11,8 +11,13 @@ models = load("models")
 
 
 class FakeCloud:
-    def __init__(self, devices: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        devices: list[dict[str, object]],
+        responses: list[dict[str, object]] | None = None,
+    ) -> None:
         self.devices = devices
+        self.responses = responses
         self.default_server = "cn"
         self.locale = "en_US"
         self.service_token = "".join(("fixture", "credential"))
@@ -27,6 +32,8 @@ class FakeCloud:
 
     async def async_request_api(self, _api: str, request: dict[str, object], **_kwargs):
         self.requests.append(request)
+        if self.responses is not None:
+            return self.responses[len(self.requests) - 1]
         if len(self.requests) == 1:
             units = [
                 {
@@ -38,7 +45,14 @@ class FakeCloud:
             ]
         else:
             units = [{"createTime": 1500, "fileId": "fixture-older"}]
-        return {"code": 0, "data": {"thirdPartPlayUnits": units}}
+        return {
+            "code": 0,
+            "data": {
+                "thirdPartPlayUnits": units,
+                "isContinue": len(self.requests) == 1,
+                "nextTime": 1951 if len(self.requests) == 1 else 0,
+            },
+        }
 
     @staticmethod
     def json_encode(value: object) -> str:
@@ -81,6 +95,69 @@ class CloudTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1500, events[0].event_time_ms)
         self.assertEqual(2, len(cloud.requests))
         self.assertEqual(1950, cloud.requests[1]["endTime"])
+
+    async def test_empty_page_with_continuation_scans_older_window(self) -> None:
+        cloud = FakeCloud(
+            [{"model": "xiaomi.lock.s1", "did": "fixture-device"}],
+            responses=[
+                {
+                    "code": 0,
+                    "data": {
+                        "thirdPartPlayUnits": [],
+                        "isContinue": True,
+                        "nextTime": 2000,
+                    },
+                },
+                {
+                    "code": 0,
+                    "data": {
+                        "thirdPartPlayUnits": [
+                            {
+                                "createTime": 1500,
+                                "fileId": "fixture-older",
+                                "isAlarm": True,
+                            }
+                        ],
+                        "isContinue": False,
+                        "nextTime": 0,
+                    },
+                },
+            ],
+        )
+        target = models.CloudTarget(cloud, "fixture-device", "xiaomi.lock.s1")
+        events = await cloud_module.async_get_events(target, 1000, 3000)
+        self.assertEqual([1500], [event.event_time_ms for event in events])
+        self.assertEqual(2, len(cloud.requests))
+        self.assertEqual(1999, cloud.requests[1]["endTime"])
+
+    async def test_history_requires_authoritative_continuation(self) -> None:
+        cloud = FakeCloud(
+            [{"model": "xiaomi.lock.s1", "did": "fixture-device"}],
+            responses=[{"code": 0, "data": {"thirdPartPlayUnits": []}}],
+        )
+        target = models.CloudTarget(cloud, "fixture-device", "xiaomi.lock.s1")
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_get_history_page(target, 3000)
+        self.assertEqual("EVENTLIST_CONTINUATION_INVALID", raised.exception.code)
+
+    async def test_history_rejects_non_decreasing_continuation(self) -> None:
+        cloud = FakeCloud(
+            [{"model": "xiaomi.lock.s1", "did": "fixture-device"}],
+            responses=[
+                {
+                    "code": 0,
+                    "data": {
+                        "thirdPartPlayUnits": [],
+                        "isContinue": True,
+                        "nextTime": 3001,
+                    },
+                }
+            ],
+        )
+        target = models.CloudTarget(cloud, "fixture-device", "xiaomi.lock.s1")
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_get_history_page(target, 3000)
+        self.assertEqual("EVENTLIST_PAGINATION_STALLED", raised.exception.code)
 
     async def test_multiple_model_matches_fail_closed(self) -> None:
         first = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-a"}])

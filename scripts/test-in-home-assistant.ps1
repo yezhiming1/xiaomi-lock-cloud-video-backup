@@ -31,7 +31,7 @@ manifest = json.loads(
     Path('/work/custom_components/xiaomi_lock_cloud_backup/manifest.json').read_text()
 )
 assert manifest['domain'] == 'xiaomi_lock_cloud_backup'
-assert manifest['version'] == INTEGRATION_VERSION == '0.0.2'
+assert manifest['version'] == INTEGRATION_VERSION == '0.0.3'
 
 class FixtureCloud:
     default_server = 'cn'
@@ -41,7 +41,14 @@ class FixtureCloud:
         return []
 
     async def async_request_api(self, *_args, **_kwargs):
-        return {'code': 0, 'data': {'thirdPartPlayUnits': []}}
+        return {
+            'code': 0,
+            'data': {
+                'thirdPartPlayUnits': [],
+                'isContinue': False,
+                'nextTime': 0,
+            },
+        }
 
     @staticmethod
     def get_api_by_host(host, api):
@@ -76,7 +83,7 @@ async def main():
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == 'Xiaomi Lock Cloud Video Backup'
-    assert integration.version == '0.0.2'
+    assert integration.version == '0.0.3'
     cloud = FixtureCloud()
     hass.data['xiaomi_miot'] = {
         'sessions': {'fixture': cloud},
@@ -101,6 +108,7 @@ async def main():
     )
     assert await async_setup_entry(hass, entry)
     assert hass.services.has_service(DOMAIN, 'run_backup')
+    assert hass.services.has_service(DOMAIN, 'run_history_backfill')
     response = await hass.services.async_call(
         DOMAIN,
         'run_backup',
@@ -114,8 +122,27 @@ async def main():
         'available': 0,
         'selected': 0,
     }
+    history_response = await hass.services.async_call(
+        DOMAIN,
+        'run_history_backfill',
+        {'dry_run': True, 'max_downloads': 10},
+        blocking=True,
+        return_response=True,
+    )
+    assert history_response == {
+        'status': 'dry_run_history_complete',
+        'dry_run': True,
+        'history_backfill': True,
+        'history_complete': True,
+        'pages_scanned': 1,
+        'available': 0,
+        'selected': 0,
+    }
     manager = hass.data[DOMAIN][entry.entry_id]
-    assert manager.safe_diagnostics()['integration_version'] == '0.0.2'
+    diagnostics = manager.safe_diagnostics()
+    assert diagnostics['integration_version'] == '0.0.3'
+    assert diagnostics['history_complete'] is False
+    assert diagnostics['history_pages_completed'] == 0
     await manager._lock.acquire()
     try:
         assert not await manager.async_shutdown()

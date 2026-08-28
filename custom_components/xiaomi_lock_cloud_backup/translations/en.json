@@ -49,6 +49,20 @@
           "description": "Discover recordings without writing media, deleting files, or updating state."
         }
       }
+    },
+    "run_history_backfill": {
+      "name": "Run history backfill",
+      "description": "Resume a bounded scan toward the earliest cloud-queryable recording without changing the daily incremental cursor.",
+      "fields": {
+        "dry_run": {
+          "name": "Dry run",
+          "description": "Discover bounded history without writing media, deleting files, or updating state."
+        },
+        "max_downloads": {
+          "name": "Maximum downloads",
+          "description": "Maximum recordings selected during this serialized run."
+        }
+      }
     }
   }
 }

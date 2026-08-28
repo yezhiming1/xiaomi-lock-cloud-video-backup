@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from .const import EVENT_PAGE_LIMIT, MAX_EVENT_PAGES, XIAOMI_MIOT_DOMAIN
-from .models import BackupError, CloudEvent, CloudTarget
+from .models import BackupError, CloudEvent, CloudEventPage, CloudTarget
 
 
 _CAMERA_HOST = "business.smartcamera.api.io.mi.com"
@@ -111,14 +111,51 @@ def event_digest(model: str, file_id: str) -> str:
     return hashlib.sha256(f"{model}\0{file_id}".encode("utf-8")).hexdigest()
 
 
-async def async_get_events(
+async def async_get_event_page(
     target: CloudTarget,
     begin_time_ms: int,
     end_time_ms: int | None = None,
-) -> tuple[CloudEvent, ...]:
-    """Fetch newer recording events using bounded descending pagination."""
-    end_time_ms = end_time_ms or int(time.time() * 1000)
-    if begin_time_ms < 0 or end_time_ms <= begin_time_ms:
+) -> CloudEventPage:
+    """Fetch one bounded page and normalize its older-page cursor."""
+    return await _async_get_event_page(
+        target,
+        begin_time_ms,
+        end_time_ms,
+        require_continuation=False,
+    )
+
+
+async def async_get_history_page(
+    target: CloudTarget,
+    end_time_ms: int,
+) -> CloudEventPage:
+    """Fetch one history page, requiring an authoritative continuation marker."""
+    return await _async_get_event_page(
+        target,
+        0,
+        end_time_ms,
+        require_continuation=True,
+    )
+
+
+async def _async_get_event_page(
+    target: CloudTarget,
+    begin_time_ms: int,
+    end_time_ms: int | None,
+    *,
+    require_continuation: bool,
+) -> CloudEventPage:
+    """Request and validate a single event-list page."""
+    if end_time_ms is None:
+        end_time_ms = int(time.time() * 1000)
+    if (
+        not isinstance(begin_time_ms, int)
+        or isinstance(begin_time_ms, bool)
+        or not isinstance(end_time_ms, int)
+        or isinstance(end_time_ms, bool)
+        or begin_time_ms < 0
+        or end_time_ms <= begin_time_ms
+    ):
         raise BackupError("EVENT_WINDOW_INVALID")
     cloud = target.cloud
     try:
@@ -128,84 +165,142 @@ async def async_get_events(
     except Exception:
         raise BackupError("CLOUD_SESSION_INVALID") from None
 
+    request = {
+        "did": target.did,
+        "model": target.model,
+        "doorBell": True,
+        "eventType": "Default",
+        "needMerge": True,
+        "sortType": "DESC",
+        "region": region,
+        "language": language,
+        "beginTime": begin_time_ms,
+        "endTime": end_time_ms,
+        "limit": EVENT_PAGE_LIMIT,
+    }
+    try:
+        response = await cloud.async_request_api(
+            api,
+            request,
+            method="GET",
+            crypt=True,
+            debug=False,
+            timeout=30,
+            raise_timeout=True,
+        ) or {}
+    except Exception:
+        raise BackupError("EVENTLIST_REQUEST_FAILED") from None
+    if not isinstance(response, dict) or response.get("code") not in (None, 0):
+        raise BackupError("EVENTLIST_REJECTED")
+    data = response.get("data")
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise BackupError("EVENTLIST_RESPONSE_INVALID")
+    units = data.get("thirdPartPlayUnits")
+    if units is None:
+        units = []
+    if not isinstance(units, list):
+        raise BackupError("EVENTLIST_RESPONSE_INVALID")
+
+    events_by_id: dict[str, CloudEvent] = {}
+    oldest_ms: int | None = None
+    for unit in units:
+        if not isinstance(unit, dict):
+            raise BackupError("EVENTLIST_RESPONSE_INVALID")
+        try:
+            event_time_ms = int(unit.get("createTime"))
+        except (TypeError, ValueError):
+            raise BackupError("EVENT_TIME_INVALID") from None
+        oldest_ms = (
+            event_time_ms if oldest_ms is None else min(oldest_ms, event_time_ms)
+        )
+        if event_time_ms < begin_time_ms or event_time_ms > end_time_ms:
+            continue
+        file_id = str(unit.get("fileId") or "")
+        if not file_id or len(file_id) > 1024:
+            raise BackupError("EVENT_FILE_ID_INVALID")
+        events_by_id.setdefault(
+            file_id,
+            CloudEvent(
+                event_time_ms=event_time_ms,
+                file_id=file_id,
+                is_alarm=bool(unit.get("isAlarm")),
+            ),
+        )
+
+    events = tuple(
+        sorted(
+            events_by_id.values(),
+            key=lambda item: (item.event_time_ms, item.file_id),
+        )
+    )
+    is_continue = data.get("isContinue")
+    if isinstance(is_continue, bool):
+        if not is_continue:
+            return CloudEventPage(events=events, next_end_ms=None, complete=True)
+        next_time = data.get("nextTime")
+        if isinstance(next_time, bool):
+            raise BackupError("EVENTLIST_CONTINUATION_INVALID")
+        try:
+            next_time_ms = int(next_time)
+        except (TypeError, ValueError):
+            raise BackupError("EVENTLIST_CONTINUATION_INVALID") from None
+        boundary_ms = next_time_ms
+        if oldest_ms is not None:
+            boundary_ms = min(boundary_ms, oldest_ms)
+        next_end_ms = boundary_ms - 1
+        if next_end_ms < begin_time_ms:
+            return CloudEventPage(events=events, next_end_ms=None, complete=True)
+        if next_end_ms >= end_time_ms:
+            raise BackupError("EVENTLIST_PAGINATION_STALLED")
+        return CloudEventPage(
+            events=events,
+            next_end_ms=next_end_ms,
+            complete=False,
+        )
+
+    if require_continuation:
+        raise BackupError("EVENTLIST_CONTINUATION_INVALID")
+    if not units or len(units) < EVENT_PAGE_LIMIT or oldest_ms is None:
+        return CloudEventPage(events=events, next_end_ms=None, complete=True)
+    next_end_ms = oldest_ms - 1
+    if next_end_ms < begin_time_ms:
+        return CloudEventPage(events=events, next_end_ms=None, complete=True)
+    if next_end_ms >= end_time_ms:
+        raise BackupError("EVENTLIST_PAGINATION_STALLED")
+    return CloudEventPage(events=events, next_end_ms=next_end_ms, complete=False)
+
+
+async def async_get_events(
+    target: CloudTarget,
+    begin_time_ms: int,
+    end_time_ms: int | None = None,
+) -> tuple[CloudEvent, ...]:
+    """Fetch newer recording events using bounded descending pagination."""
+    if end_time_ms is None:
+        end_time_ms = int(time.time() * 1000)
     events_by_id: dict[str, CloudEvent] = {}
     page_end_ms = end_time_ms
     exhausted = False
     for _page_number in range(MAX_EVENT_PAGES):
-        request = {
-            "did": target.did,
-            "model": target.model,
-            "doorBell": True,
-            "eventType": "Default",
-            "needMerge": True,
-            "sortType": "DESC",
-            "region": region,
-            "language": language,
-            "beginTime": begin_time_ms,
-            "endTime": page_end_ms,
-            "limit": EVENT_PAGE_LIMIT,
-        }
-        try:
-            response = await cloud.async_request_api(
-                api,
-                request,
-                method="GET",
-                crypt=True,
-                debug=False,
-                timeout=30,
-                raise_timeout=True,
-            ) or {}
-        except Exception:
-            raise BackupError("EVENTLIST_REQUEST_FAILED") from None
-        if not isinstance(response, dict) or response.get("code") not in (None, 0):
-            raise BackupError("EVENTLIST_REJECTED")
-        data = response.get("data") or {}
-        units = data.get("thirdPartPlayUnits") if isinstance(data, dict) else None
-        if units is None:
-            units = []
-        if not isinstance(units, list):
-            raise BackupError("EVENTLIST_RESPONSE_INVALID")
-        if not units:
+        page = await async_get_event_page(target, begin_time_ms, page_end_ms)
+        for event in page.events:
+            events_by_id.setdefault(event.file_id, event)
+        if page.complete:
             exhausted = True
             break
-
-        oldest_ms: int | None = None
-        for unit in units:
-            if not isinstance(unit, dict):
-                raise BackupError("EVENTLIST_RESPONSE_INVALID")
-            try:
-                event_time_ms = int(unit.get("createTime"))
-            except (TypeError, ValueError):
-                raise BackupError("EVENT_TIME_INVALID") from None
-            oldest_ms = (
-                event_time_ms if oldest_ms is None else min(oldest_ms, event_time_ms)
-            )
-            if event_time_ms < begin_time_ms or event_time_ms > end_time_ms:
-                continue
-            file_id = str(unit.get("fileId") or "")
-            if not file_id or len(file_id) > 1024:
-                raise BackupError("EVENT_FILE_ID_INVALID")
-            events_by_id.setdefault(
-                file_id,
-                CloudEvent(
-                    event_time_ms=event_time_ms,
-                    file_id=file_id,
-                    is_alarm=bool(unit.get("isAlarm")),
-                ),
-            )
-
-        if len(units) < EVENT_PAGE_LIMIT or oldest_ms is None or oldest_ms <= begin_time_ms:
-            exhausted = True
-            break
-        next_page_end_ms = oldest_ms - 1
-        if next_page_end_ms >= page_end_ms:
-            raise BackupError("EVENTLIST_PAGINATION_STALLED")
-        page_end_ms = next_page_end_ms
+        if page.next_end_ms is None:
+            raise BackupError("EVENTLIST_CONTINUATION_INVALID")
+        page_end_ms = page.next_end_ms
 
     if not exhausted:
         raise BackupError("EVENTLIST_PAGE_LIMIT")
     return tuple(
-        sorted(events_by_id.values(), key=lambda item: (item.event_time_ms, item.file_id))
+        sorted(
+            events_by_id.values(),
+            key=lambda item: (item.event_time_ms, item.file_id),
+        )
     )
 
 
