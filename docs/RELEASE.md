@@ -15,8 +15,33 @@
 - [x] 固定 Home Assistant `2026.8.2` 镜像在禁网容器中完成内存实体回退、服务调用、
   诊断版本、定时器与卸载生命周期验证，同时 29/29 测试通过。
 - [ ] GitHub Pull Request 合并并确认本地 `main == origin/main`。
-- [ ] 生成并验证 `V0.0.2` 安装包与 SHA-256。
-- [ ] 真实 Home Assistant 目标完成升级、重启和只读预检；媒体目录保持无新增文件。
+- [x] 生成并验证 `V0.0.2` 安装包与 SHA-256。
+- [x] 真实 Home Assistant 目标完成升级、配置检查、单次重启和只读复核；媒体目录保持
+  不存在。
+- [ ] 在可用的 Home Assistant 登录会话中调用一次 `run_backup` 且设置
+  `dry_run: true`；当前证据为 `UNKNOWN`。
+
+### 目标环境证据
+
+- 目标为 HAOS `18.2`、Home Assistant Core `2026.8.2`。
+- 切换前确认已安装 manifest 为 `0.0.1`；新建完整 HA 备份，并保留可读的 27 文件
+  V0.0.1 安装目录归档和原安装目录。
+- 目标端候选 ZIP 的 SHA-256 与本地产物相同；解压后 16 个组件文件与候选树逐文件
+  相同。
+- `ha core check` 成功；单次重启命令成功，随后 `ha core info` 返回 `ok` 和
+  `2026.8.2`，伴侣工作台报告 Core `running`，HTTP 首页返回 `200`。
+- 重启后安装目录为 `0.0.2` 且仍与候选逐文件相同；V0.0.1 原安装目录保持为
+  `0.0.1`。最近 500 行 Core 日志中本组件错误计数和 Xiaomi Miot 错误计数均为 0。
+- `/media/xiaomi_lock_cloud_backup` 在切换前后均不存在；本轮没有调用真实云下载，
+  没有产生媒体文件。
+- 浏览器原有 HA 会话已失效，系统内没有项目专用临时账号。为遵守凭据边界，本轮没有
+  读取认证存储、Cookie 或访问令牌，因此真实服务 dry-run 保持 `UNKNOWN`。
+
+### V0.0.2 产物
+
+- `xiaomi-lock-cloud-video-backup-V0.0.2.zip`：16 个文件，manifest `0.0.2`，
+  SHA-256 `87DB5C918A646D397E571D7746AF38680946F2763A1252C8FB47B1AB3EC6CCC3`。
+- 安装包与 `SHA256SUMS.txt` 保留在项目本地 `artifacts/V0.0.2`，不进入公开 Git 树。
 
 ### 前代恢复基线
 
