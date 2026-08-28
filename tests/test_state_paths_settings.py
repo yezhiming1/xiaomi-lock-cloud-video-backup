@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import os
 import tempfile
@@ -131,6 +132,22 @@ class PathTests(unittest.TestCase):
 
 
 class SettingsTests(unittest.TestCase):
+    def test_version_surfaces_match(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        manifest = json.loads(
+            (
+                project_root
+                / "custom_components"
+                / "xiaomi_lock_cloud_backup"
+                / "manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        release_version = (project_root / "VERSION").read_text(
+            encoding="utf-8"
+        ).strip()
+        self.assertEqual(const.INTEGRATION_VERSION, manifest["version"])
+        self.assertEqual(f"V{manifest['version']}", release_version)
+
     def test_defaults_normalize_without_credentials(self) -> None:
         normalized = settings.validate_settings({})
         self.assertEqual("03:30:00", normalized[const.CONF_SCHEDULE_TIME])

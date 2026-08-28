@@ -2,7 +2,9 @@
 
 ## 数据流
 
-1. 集成只从 `hass.data["xiaomi_miot"]["sessions"]` 选择已经加载的云会话。
+1. 集成先从 `hass.data["xiaomi_miot"]["sessions"]` 的云设备列表选择目标，并在内存中
+   按设备编号去重。云设备列表没有匹配时，才读取 `entities` 中已经加载的实体索引；
+   实体绑定的云对象必须仍属于上述已加载会话。两条路径都不读取认证存储。
 2. 通过 `common/app/get/eventlist` 分页查询状态游标之后的录像事件。
 3. 设备编号和录像编号仅保存在本次调用的内存对象中；持久状态只记录
    `SHA-256(model + NUL + file_id)`。

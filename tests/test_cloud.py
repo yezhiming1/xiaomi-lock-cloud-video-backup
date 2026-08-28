@@ -50,8 +50,24 @@ class FakeCloud:
 
 
 class FakeHass:
-    def __init__(self, sessions: dict[str, object]) -> None:
-        self.data = {"xiaomi_miot": {"sessions": sessions}}
+    def __init__(
+        self,
+        sessions: dict[str, object],
+        entities: dict[str, object] | None = None,
+    ) -> None:
+        self.data = {
+            "xiaomi_miot": {
+                "sessions": sessions,
+                "entities": entities or {},
+            }
+        }
+
+
+class FakeEntity:
+    def __init__(self, model: str, did: str, cloud: object) -> None:
+        self.model = model
+        self.miot_did = did
+        self.xiaomi_cloud = cloud
 
 
 class CloudTests(unittest.IsolatedAsyncioTestCase):
@@ -74,7 +90,79 @@ class CloudTests(unittest.IsolatedAsyncioTestCase):
                 FakeHass({"first": first, "second": second}),
                 "xiaomi.lock.s1",
             )
-        self.assertEqual("TARGET_MATCH_COUNT_INVALID", raised.exception.code)
+        self.assertEqual("TARGET_MATCH_MULTIPLE", raised.exception.code)
+        self.assertNotIn("fixture-a", str(raised.exception))
+        self.assertNotIn("fixture-b", str(raised.exception))
+
+    async def test_same_device_across_sessions_is_one_target(self) -> None:
+        first = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-same"}])
+        second = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-same"}])
+        target = await cloud_module.async_find_single_target(
+            FakeHass({"first": first, "second": second}),
+            "xiaomi.lock.s1",
+        )
+        self.assertIs(first, target.cloud)
+
+    async def test_no_model_match_has_distinct_fixed_code(self) -> None:
+        cloud = FakeCloud([{"model": "fixture.other", "did": "fixture-device"}])
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(
+                FakeHass({"fixture": cloud}), "xiaomi.lock.s1"
+            )
+        self.assertEqual("TARGET_MATCH_NONE", raised.exception.code)
+        self.assertNotIn("fixture-device", str(raised.exception))
+
+    async def test_runtime_entity_fallback_reuses_loaded_session(self) -> None:
+        cloud = FakeCloud([])
+        target = await cloud_module.async_find_single_target(
+            FakeHass(
+                {"fixture": cloud},
+                {
+                    "lock.fixture": FakeEntity(
+                        "xiaomi.lock.s1", "fixture-runtime", cloud
+                    )
+                },
+            ),
+            "xiaomi.lock.s1",
+        )
+        self.assertIs(cloud, target.cloud)
+        self.assertEqual("fixture-runtime", target.did)
+
+    async def test_runtime_entity_fallback_requires_loaded_session(self) -> None:
+        loaded = FakeCloud([])
+        unrelated = FakeCloud([])
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(
+                FakeHass(
+                    {"loaded": loaded},
+                    {
+                        "lock.fixture": FakeEntity(
+                            "xiaomi.lock.s1", "fixture-runtime", unrelated
+                        )
+                    },
+                ),
+                "xiaomi.lock.s1",
+            )
+        self.assertEqual("TARGET_MATCH_NONE", raised.exception.code)
+
+    async def test_runtime_entity_fallback_fails_on_distinct_targets(self) -> None:
+        cloud = FakeCloud([])
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(
+                FakeHass(
+                    {"fixture": cloud},
+                    {
+                        "lock.first": FakeEntity(
+                            "xiaomi.lock.s1", "fixture-a", cloud
+                        ),
+                        "lock.second": FakeEntity(
+                            "xiaomi.lock.s1", "fixture-b", cloud
+                        ),
+                    },
+                ),
+                "xiaomi.lock.s1",
+            )
+        self.assertEqual("TARGET_MATCH_MULTIPLE", raised.exception.code)
 
     async def test_missing_loaded_session_does_not_read_auth_storage(self) -> None:
         with self.assertRaises(models.BackupError) as raised:
