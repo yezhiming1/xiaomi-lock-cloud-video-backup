@@ -9,25 +9,52 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 import voluptuous as vol
 
-from .const import DOMAIN, SERVICE_RUN_BACKUP
+from .const import (
+    DEFAULT_HISTORY_MAX_DOWNLOADS,
+    DOMAIN,
+    MAX_HISTORY_DOWNLOADS_PER_RUN,
+    SERVICE_RUN_BACKUP,
+    SERVICE_RUN_HISTORY_BACKFILL,
+)
 from .manager import BackupManager
 from .models import BackupError
 
 
 SERVICE_SCHEMA = vol.Schema({vol.Optional("dry_run", default=False): bool})
+HISTORY_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("dry_run", default=False): bool,
+        vol.Optional(
+            "max_downloads",
+            default=DEFAULT_HISTORY_MAX_DOWNLOADS,
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=1, max=MAX_HISTORY_DOWNLOADS_PER_RUN),
+        ),
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
-    """Register the single response-capable service."""
+    """Register response-capable incremental and historical services."""
     hass.data.setdefault(DOMAIN, {})
 
     async def async_handle_run_backup(call: ServiceCall) -> dict[str, object]:
-        managers = hass.data.get(DOMAIN, {})
-        loaded = [item for item in managers.values() if isinstance(item, BackupManager)]
-        if len(loaded) != 1:
-            raise HomeAssistantError("BACKUP_ENTRY_NOT_READY")
+        manager = _single_loaded_manager(hass)
         try:
-            return await loaded[0].async_run(dry_run=bool(call.data["dry_run"]))
+            return await manager.async_run(dry_run=bool(call.data["dry_run"]))
+        except BackupError as exc:
+            raise HomeAssistantError(exc.code) from None
+        except Exception:
+            raise HomeAssistantError("BACKUP_UNEXPECTED") from None
+
+    async def async_handle_history_backfill(call: ServiceCall) -> dict[str, object]:
+        manager = _single_loaded_manager(hass)
+        try:
+            return await manager.async_run_history_backfill(
+                dry_run=bool(call.data["dry_run"]),
+                max_downloads=int(call.data["max_downloads"]),
+            )
         except BackupError as exc:
             raise HomeAssistantError(exc.code) from None
         except Exception:
@@ -41,7 +68,23 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             schema=SERVICE_SCHEMA,
             supports_response=SupportsResponse.OPTIONAL,
         )
+    if not hass.services.has_service(DOMAIN, SERVICE_RUN_HISTORY_BACKFILL):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_RUN_HISTORY_BACKFILL,
+            async_handle_history_backfill,
+            schema=HISTORY_SERVICE_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
     return True
+
+
+def _single_loaded_manager(hass: HomeAssistant) -> BackupManager:
+    managers = hass.data.get(DOMAIN, {})
+    loaded = [item for item in managers.values() if isinstance(item, BackupManager)]
+    if len(loaded) != 1:
+        raise HomeAssistantError("BACKUP_ENTRY_NOT_READY")
+    return loaded[0]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

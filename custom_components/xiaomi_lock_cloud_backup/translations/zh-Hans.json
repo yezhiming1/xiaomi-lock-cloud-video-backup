@@ -49,6 +49,20 @@
           "description": "只发现可备份录像，不写入媒体、不删除文件，也不更新状态。"
         }
       }
+    },
+    "run_history_backfill": {
+      "name": "执行历史回填",
+      "description": "在不改变每日增量游标的前提下，有界地向云端当前可查询的最早录像继续扫描。",
+      "fields": {
+        "dry_run": {
+          "name": "只读预检",
+          "description": "只发现有界历史，不写入媒体、不删除文件，也不更新状态。"
+        },
+        "max_downloads": {
+          "name": "最多下载数量",
+          "description": "本次串行回填最多选择的录像数量。"
+        }
+      }
     }
   }
 }

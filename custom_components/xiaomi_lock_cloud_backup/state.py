@@ -15,6 +15,9 @@ class BackupState:
     """Persistent state containing hashes and generated filenames only."""
 
     cursor_ms: int
+    history_end_ms: int | None = None
+    history_complete: bool = False
+    history_pages_completed: int = 0
     seen: list[str] = field(default_factory=list)
     failures: dict[str, int] = field(default_factory=dict)
     managed_files: dict[str, int] = field(default_factory=dict)
@@ -32,6 +35,9 @@ class BackupState:
         if not isinstance(value, dict):
             raise BackupError("STATE_INVALID")
         cursor = value.get("cursor_ms")
+        history_end = value.get("history_end_ms")
+        history_complete = value.get("history_complete", False)
+        history_pages = value.get("history_pages_completed", 0)
         seen = value.get("seen", [])
         failures = value.get("failures", {})
         managed = value.get("managed_files", {})
@@ -39,6 +45,22 @@ class BackupState:
         error_code = value.get("last_error_code", "none")
         if not isinstance(cursor, int) or cursor < 0:
             raise BackupError("STATE_CURSOR_INVALID")
+        if history_end is not None and (
+            not isinstance(history_end, int)
+            or isinstance(history_end, bool)
+            or history_end <= 0
+        ):
+            raise BackupError("STATE_HISTORY_CURSOR_INVALID")
+        if not isinstance(history_complete, bool):
+            raise BackupError("STATE_HISTORY_COMPLETE_INVALID")
+        if (
+            not isinstance(history_pages, int)
+            or isinstance(history_pages, bool)
+            or history_pages < 0
+        ):
+            raise BackupError("STATE_HISTORY_PAGES_INVALID")
+        if history_complete and history_end is not None:
+            raise BackupError("STATE_HISTORY_INVALID")
         if not isinstance(seen, list) or any(not _is_digest(item) for item in seen):
             raise BackupError("STATE_SEEN_INVALID")
         if not isinstance(failures, dict) or any(
@@ -61,6 +83,9 @@ class BackupState:
             raise BackupError("STATE_ERROR_CODE_INVALID")
         return cls(
             cursor_ms=cursor,
+            history_end_ms=history_end,
+            history_complete=history_complete,
+            history_pages_completed=history_pages,
             seen=list(dict.fromkeys(seen[-MAX_SEEN_IDENTIFIERS:])),
             failures=dict(list(failures.items())[-MAX_SEEN_IDENTIFIERS:]),
             managed_files=dict(managed),
@@ -72,6 +97,9 @@ class BackupState:
         return {
             "cursor_ms": self.cursor_ms,
             "failures": dict(self.failures),
+            "history_complete": self.history_complete,
+            "history_end_ms": self.history_end_ms,
+            "history_pages_completed": self.history_pages_completed,
             "last_error_code": self.last_error_code,
             "last_run_status": self.last_run_status,
             "managed_files": dict(self.managed_files),
@@ -134,6 +162,41 @@ class BackupState:
         if timestamp_ms < self.cursor_ms:
             return
         self.cursor_ms = timestamp_ms
+
+    def begin_history(self, end_time_ms: int) -> None:
+        """Freeze the upper boundary for a resumable one-time backfill."""
+        if self.history_complete:
+            raise BackupError("HISTORY_ALREADY_COMPLETE")
+        if (
+            not isinstance(end_time_ms, int)
+            or isinstance(end_time_ms, bool)
+            or end_time_ms <= 0
+        ):
+            raise BackupError("STATE_HISTORY_CURSOR_INVALID")
+        if self.history_end_ms is None:
+            self.history_end_ms = end_time_ms
+
+    def advance_history(self, next_end_ms: int) -> None:
+        """Commit one fully handled cloud page and move strictly backward."""
+        current = self.history_end_ms
+        if self.history_complete or current is None:
+            raise BackupError("STATE_HISTORY_INVALID")
+        if (
+            not isinstance(next_end_ms, int)
+            or isinstance(next_end_ms, bool)
+            or next_end_ms <= 0
+            or next_end_ms >= current
+        ):
+            raise BackupError("STATE_HISTORY_CURSOR_INVALID")
+        self.history_end_ms = next_end_ms
+        self.history_pages_completed += 1
+
+    def complete_history(self) -> None:
+        """Record the API's authoritative end-of-history result."""
+        if not self.history_complete:
+            self.history_pages_completed += 1
+        self.history_complete = True
+        self.history_end_ms = None
 
 
 def _is_digest(value: object) -> bool:

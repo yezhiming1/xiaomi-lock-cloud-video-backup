@@ -23,6 +23,15 @@ class CloudEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CloudEventPage:
+    """One bounded event-list response and its older-page cursor."""
+
+    events: tuple[CloudEvent, ...]
+    next_end_ms: int | None
+    complete: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CloudTarget:
     """An in-memory target binding."""
 

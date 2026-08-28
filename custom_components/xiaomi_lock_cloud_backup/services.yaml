@@ -11,3 +11,27 @@ run_backup:
       default: false
       selector:
         boolean:
+
+run_history_backfill:
+  name: Run history backfill
+  description: >-
+    Resume a bounded scan toward the earliest cloud-queryable recording while
+    leaving the daily incremental cursor unchanged.
+  fields:
+    dry_run:
+      name: Dry run
+      description: Discover bounded history without downloading, deleting, or updating state.
+      required: false
+      default: false
+      selector:
+        boolean:
+    max_downloads:
+      name: Maximum downloads
+      description: Maximum recordings selected during this serialized run.
+      required: false
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box

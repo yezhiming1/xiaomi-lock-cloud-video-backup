@@ -38,6 +38,27 @@ class StateTests(unittest.TestCase):
         self.assertNotIn(digest, state.failures)
         self.assertEqual(20, state.cursor_ms)
 
+    def test_older_history_success_does_not_rewind_incremental_cursor(self) -> None:
+        digest = "b" * 64
+        state = state_module.BackupState.initial(5000)
+        filename = "xiaomi_lock_20260826T000000000Z_bbbbbbbbbbbb.mp4"
+        state.record_success(digest, filename, 2000, 6000)
+        self.assertEqual(5000, state.cursor_ms)
+
+    def test_history_cursor_is_resumable_and_legacy_state_migrates(self) -> None:
+        state = state_module.BackupState.from_dict({"cursor_ms": 5000})
+        self.assertIsNone(state.history_end_ms)
+        self.assertFalse(state.history_complete)
+        state.begin_history(4000)
+        state.advance_history(3000)
+        with self.assertRaises(models.BackupError):
+            state.advance_history(3000)
+        state.complete_history()
+        restored = state_module.BackupState.from_dict(state.to_dict())
+        self.assertTrue(restored.history_complete)
+        self.assertIsNone(restored.history_end_ms)
+        self.assertEqual(2, restored.history_pages_completed)
+
     def test_state_rejects_non_code_diagnostic_text(self) -> None:
         with self.assertRaises(models.BackupError):
             state_module.BackupState.from_dict(
