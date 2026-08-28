@@ -10,6 +10,7 @@
 
 ## 当前目标状态
 
+- V0.0.2 源码已由 GitHub Pull Request `#4` 合并到公开 `main`，公开 CI 通过。
 - 目标 HAOS 上的安装目录已切换到 manifest `0.0.2`，配置检查和单次 Core 重启成功。
 - 重启后 Core 返回正常，伴侣工作台显示运行中；本组件和 Xiaomi Miot 的近期错误计数
   均为 0。
