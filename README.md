@@ -17,7 +17,9 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Version: `V0.0.3` / integration manifest `0.0.3`
+- Candidate version: `V0.0.4` / integration manifest `0.0.4`; the currently
+  verified target installation remains `V0.0.3` until the V0.0.4 deployment
+  gate passes.
 - Event discovery has been exercised with model `xiaomi.lock.s1`.
 - Target discovery de-duplicates the same physical device across loaded cloud
   sessions. When the cloud device list has no matching model, it can fall back
@@ -28,7 +30,10 @@ atomically publishes validated MP4 files.
   the current target. The history service reached explicit endpoint completion;
   final history and incremental dry runs each reported zero pending items.
   Treat this release as experimental.
-- Face or stranger recognition is not included in `V0.0.3`.
+- V0.0.4 adds a bounded, de-identified local status journal for a separate
+  recognition/operations consumer and allows retention `0` to disable
+  downloader-owned deletion.
+- Face or stranger recognition is not included in this integration.
 
 ## Safety properties
 
@@ -47,6 +52,10 @@ atomically publishes validated MP4 files.
 - A history page is committed only after every event on that page is already
   handled. Empty pages follow Xiaomi's continuation marker instead of being
   treated as the end of history, and a non-decreasing marker fails closed.
+- Normal non-dry runs append only a fixed state, fixed error code, attempt
+  count, UTC record time, and opaque SHA-256 report key to
+  `.xiaomi_lock_backup_status.jsonl`. The journal contains no device, account,
+  recording, URL, credential, or media identifier.
 
 ## Requirements
 
@@ -95,6 +104,9 @@ Defaults:
 - Maximum downloads per run: 100
 - Audio: retained when present
 
+Set retention to `0` when a separate verified-backup workflow owns deletion.
+With `0`, normal and historical runs never perform retention deletion.
+
 The service `xiaomi_lock_cloud_backup.run_backup` supports a safe discovery
 check:
 
@@ -134,6 +146,11 @@ Failures use fixed codes. An individual recording is retried on later runs and
 quarantined after three failures so a permanently incompatible item cannot
 block all newer recordings.
 
+Infrastructure-level normal-run failures are recorded as `retrying` for the
+first two consecutive failures and `failed` on the third. A successful normal
+run resets that counter. Status-journal failures never expose their source
+error and do not turn a successful media backup into a failed run.
+
 The target model and output directory are fixed when the entry is created so
 retention authority cannot silently move to a different directory. To change
 either value, remove and recreate the entry; existing media is left untouched.
@@ -157,7 +174,11 @@ either value, remove and recreate the entry; existing media is left untouched.
 可退回到 Xiaomi Miot 已加载的内存实体索引，但实体仍必须绑定到已加载的云会话。
 零个和多个不同目标会返回不同的固定错误码，响应不会包含设备编号。
 
-`V0.0.3` 只实现增量与历史录像备份，不包含陌生人或人脸识别。目标环境已完成一次
+`V0.0.4` 新增本地脱敏状态日志，并允许把保留天数设为 `0`，把删除职责交给完成远端
+校验的独立备份任务。状态日志只包含固定状态、固定错误码、次数、UTC 记录时间和不可逆
+摘要，不包含设备、录像、账号、URL 或认证信息。
+
+本集成只实现增量与历史录像备份，不包含陌生人或人脸识别。目标环境已完成一次
 真实历史回填、最终零待处理复核和全部目标媒体解析；私有云接口仍可能随时变化，首次
 每日计划周期和长期稳定性继续保持 `UNKNOWN`。
 

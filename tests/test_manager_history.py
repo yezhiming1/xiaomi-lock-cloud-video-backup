@@ -67,6 +67,28 @@ def _fixture_manager(state):
 
 
 class HistoryManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_infrastructure_failure_is_final_only_on_third_run(self) -> None:
+        state = state_module.BackupState.initial(5000)
+        manager = _fixture_manager(state)
+        reports: list[dict[str, object]] = []
+
+        async def append_status(_self, report_key, **values):
+            reports.append({"report_key": report_key, **values})
+
+        manager._async_append_status_report = MethodType(append_status, manager)
+        for attempt in range(1, 4):
+            await manager._async_record_run_failure(
+                "a" * 64,
+                "EVENTLIST_REQUEST_FAILED",
+            )
+            self.assertEqual(attempt, state.consecutive_run_failures)
+
+        self.assertEqual(
+            ["retrying", "retrying", "failed"],
+            [str(report["state"]) for report in reports],
+        )
+        self.assertEqual([1, 2, 3], [report["attempts"] for report in reports])
+
     async def test_history_download_limit_is_bounded(self) -> None:
         manager = _fixture_manager(state_module.BackupState.initial(5000))
         for value in (0, 101):

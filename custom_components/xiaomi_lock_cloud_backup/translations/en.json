@@ -9,7 +9,7 @@
           "target_model": "Target model",
           "schedule_time": "Daily local time (HH:MM:SS)",
           "output_subdirectory": "Subdirectory below /media",
-          "retention_days": "Retention days",
+          "retention_days": "Retention days (0 disables automatic deletion)",
           "max_downloads_per_run": "Maximum downloads per run",
           "keep_audio": "Keep audio when present"
         }
@@ -29,7 +29,7 @@
         "title": "Backup options",
         "data": {
           "schedule_time": "Daily local time (HH:MM:SS)",
-          "retention_days": "Retention days",
+          "retention_days": "Retention days (0 disables automatic deletion)",
           "max_downloads_per_run": "Maximum downloads per run",
           "keep_audio": "Keep audio when present"
         }

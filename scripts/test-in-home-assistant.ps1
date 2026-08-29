@@ -31,7 +31,7 @@ manifest = json.loads(
     Path('/work/custom_components/xiaomi_lock_cloud_backup/manifest.json').read_text()
 )
 assert manifest['domain'] == 'xiaomi_lock_cloud_backup'
-assert manifest['version'] == INTEGRATION_VERSION == '0.0.3'
+assert manifest['version'] == INTEGRATION_VERSION == '0.0.4'
 
 class FixtureCloud:
     default_server = 'cn'
@@ -83,7 +83,7 @@ async def main():
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == 'Xiaomi Lock Cloud Video Backup'
-    assert integration.version == '0.0.3'
+    assert integration.version == '0.0.4'
     cloud = FixtureCloud()
     hass.data['xiaomi_miot'] = {
         'sessions': {'fixture': cloud},
@@ -122,6 +122,35 @@ async def main():
         'available': 0,
         'selected': 0,
     }
+    normal_response = await hass.services.async_call(
+        DOMAIN,
+        'run_backup',
+        {'dry_run': False},
+        blocking=True,
+        return_response=True,
+    )
+    assert normal_response == {
+        'status': 'ok',
+        'dry_run': False,
+        'available': 0,
+        'selected': 0,
+        'downloaded': 0,
+        'recovered': 0,
+        'failed': 0,
+        'quarantined': 0,
+        'deleted': 0,
+        'retention_missing': 0,
+        'retention_failures': 0,
+        'last_failure_code': 'none',
+    }
+    journal = Path('/media/xiaomi_lock_cloud_backup/.xiaomi_lock_backup_status.jsonl')
+    report = json.loads(journal.read_text(encoding='utf-8').splitlines()[-1])
+    assert report['schema_version'] == 1
+    assert report['source'] == DOMAIN
+    assert report['state'] == 'downloaded'
+    assert report['attempts'] == 0
+    assert len(report['report_key']) == 64
+    assert 'fixture_entry' not in journal.read_text(encoding='utf-8')
     history_response = await hass.services.async_call(
         DOMAIN,
         'run_history_backfill',
@@ -140,7 +169,7 @@ async def main():
     }
     manager = hass.data[DOMAIN][entry.entry_id]
     diagnostics = manager.safe_diagnostics()
-    assert diagnostics['integration_version'] == '0.0.3'
+    assert diagnostics['integration_version'] == '0.0.4'
     assert diagnostics['history_complete'] is False
     assert diagnostics['history_pages_completed'] == 0
     await manager._lock.acquire()
