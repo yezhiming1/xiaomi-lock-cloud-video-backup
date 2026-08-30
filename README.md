@@ -17,9 +17,9 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Candidate version: `V0.0.6` / integration manifest `0.0.6`. V0.0.5 reached
-  the target, but Home Assistant's frontend treated a required numeric `0` as
-  empty and rejected it, so its normal-run gate was not executed.
+- Candidate version: `V0.0.7` / integration manifest `0.0.7`. V0.0.6 reached
+  the target and preserved retention `0`; V0.0.7 fixes interrupted-run
+  recovery for valid regular outputs on NFS filesystems that report extra hard links.
 - Event discovery has been exercised with model `xiaomi.lock.s1`.
 - Target discovery de-duplicates the same physical device across loaded cloud
   sessions. When the cloud device list has no matching model, it can fall back
@@ -33,6 +33,8 @@ atomically publishes validated MP4 files.
 - V0.0.4 adds a bounded, de-identified local status journal for a separate
   recognition/operations consumer. V0.0.6 presents retention as validated
   numeric text so `0` can pass the frontend and disable downloader-owned deletion.
+  V0.0.7 permits read-only recovery validation of linked regular files while
+  retaining strict symlink rejection and single-link deletion checks.
 - Face or stranger recognition is not included in this integration.
 
 ## Safety properties
@@ -177,6 +179,8 @@ either value, remove and recreate the entry; existing media is left untouched.
 `V0.0.4` 新增本地脱敏状态日志。`V0.0.5` 统一表单与后端范围，但目标前端仍把必填
 数字 `0` 判为空值。`V0.0.6` 改用数字文本输入，提交后继续严格校验 `0..3650` 并
 归一化为整数，使 `0` 能保存并关闭下载器删除，把删除职责交给完成远端校验的独立备份任务。
+`V0.0.7` 允许对 NFS 上带额外硬链接的普通文件做只读媒体校验并补记中断状态；符号链接
+仍被拒绝，保留删除仍只允许单链接的已登记普通文件。
 状态日志只包含固定状态、固定错误码、次数、UTC 记录时间和不可逆摘要，不包含设备、
 录像、账号、URL 或认证信息。
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DOMAIN = "xiaomi_lock_cloud_backup"
-INTEGRATION_VERSION = "0.0.6"
+INTEGRATION_VERSION = "0.0.7"
 XIAOMI_MIOT_DOMAIN = "xiaomi_miot"
 
 CONF_KEEP_AUDIO = "keep_audio"
