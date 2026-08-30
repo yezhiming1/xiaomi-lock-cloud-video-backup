@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 DOMAIN = "xiaomi_lock_cloud_backup"
-INTEGRATION_VERSION = "0.0.4"
+INTEGRATION_VERSION = "0.0.5"
 XIAOMI_MIOT_DOMAIN = "xiaomi_miot"
 
 CONF_KEEP_AUDIO = "keep_audio"
@@ -23,6 +23,9 @@ DEFAULT_RETENTION_DAYS = 30
 DEFAULT_SCHEDULE_TIME = "03:30:00"
 DEFAULT_TARGET_MODEL = "xiaomi.lock.s1"
 DEFAULT_HISTORY_MAX_DOWNLOADS = 100
+
+MIN_RETENTION_DAYS = 0
+MAX_RETENTION_DAYS = 3650
 
 MEDIA_ROOT = Path("/media")
 SERVICE_RUN_BACKUP = "run_backup"
