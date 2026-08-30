@@ -108,6 +108,43 @@ class HlsTests(unittest.TestCase):
             self.assertEqual(b"existing", output.read_bytes())
             self.assertEqual(b"new", partial.read_bytes())
 
+    def test_recovery_accepts_valid_regular_file_with_an_extra_hard_link(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            output = root / "output.mp4"
+            linked_copy = root / "snapshot-copy.mp4"
+            output.write_bytes(b"fixture")
+            try:
+                linked_copy.hardlink_to(output)
+            except OSError:
+                self.skipTest("hard links are unavailable")
+
+            expected = models.DownloadResult(7, 1.0, "h264", True)
+            original_probe = hls._probe_output
+            hls._probe_output = lambda path, _binary: expected
+            try:
+                recovered = hls.inspect_local_output(output, "ffprobe")
+            finally:
+                hls._probe_output = original_probe
+
+            self.assertEqual(expected, recovered)
+            self.assertEqual(2, output.stat().st_nlink)
+
+    def test_recovery_rejects_symbolic_link_without_probing_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            target = root / "target.mp4"
+            output = root / "output.mp4"
+            target.write_bytes(b"fixture")
+            try:
+                output.symlink_to(target)
+            except OSError:
+                self.skipTest("symbolic links are unavailable")
+
+            with self.assertRaises(models.BackupError) as raised:
+                hls.inspect_local_output(output, "ffprobe")
+            self.assertEqual("OUTPUT_RECOVERY_UNSAFE", raised.exception.code)
+
     def test_non_hls_response_never_publishes_output(self) -> None:
         class FakeSession:
             def __init__(self) -> None:

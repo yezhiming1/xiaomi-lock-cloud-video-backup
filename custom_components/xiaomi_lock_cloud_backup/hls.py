@@ -438,12 +438,15 @@ def _probe_output(output_path: Path, ffprobe_binary: str) -> DownloadResult:
 
 
 def inspect_local_output(output_path: Path, ffprobe_binary: str) -> DownloadResult:
-    """Validate an already-published local output after an interrupted state save."""
+    """Validate an interrupted output without mutating it.
+
+    NFS snapshots may add hard links, which do not make this read-only check less
+    trustworthy. Retention keeps its stricter single-link deletion requirement.
+    """
     if (
         not output_path.is_absolute()
         or not output_path.is_file()
         or output_path.is_symlink()
-        or output_path.stat().st_nlink != 1
     ):
         raise BackupError("OUTPUT_RECOVERY_UNSAFE")
     size = output_path.stat().st_size

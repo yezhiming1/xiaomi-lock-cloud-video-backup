@@ -41,7 +41,7 @@ manifest = json.loads(
     Path('/work/custom_components/xiaomi_lock_cloud_backup/manifest.json').read_text()
 )
 assert manifest['domain'] == 'xiaomi_lock_cloud_backup'
-assert manifest['version'] == INTEGRATION_VERSION == '0.0.6'
+assert manifest['version'] == INTEGRATION_VERSION == '0.0.7'
 candidate = default_options()
 candidate[CONF_RETENTION_DAYS] = '0'
 assert _schema(candidate)(candidate)[CONF_RETENTION_DAYS] == '0'
@@ -101,7 +101,7 @@ async def main():
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == 'Xiaomi Lock Cloud Video Backup'
-    assert integration.version == '0.0.6'
+    assert integration.version == '0.0.7'
     cloud = FixtureCloud()
     hass.data['xiaomi_miot'] = {
         'sessions': {'fixture': cloud},
@@ -187,7 +187,7 @@ async def main():
     }
     manager = hass.data[DOMAIN][entry.entry_id]
     diagnostics = manager.safe_diagnostics()
-    assert diagnostics['integration_version'] == '0.0.6'
+    assert diagnostics['integration_version'] == '0.0.7'
     assert diagnostics['history_complete'] is False
     assert diagnostics['history_pages_completed'] == 0
     await manager._lock.acquire()
