@@ -2,6 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $image = "ghcr.io/home-assistant/home-assistant@sha256:6e8225ea9de2cfe9292b634e554ebbf439118ca0c823221d794298e7a74404bb"
+$runIdentity = "$PID"
+$lifecycleContainer = "xiaomi-lock-cloud-ha-test-$runIdentity"
+$unitContainer = "xiaomi-lock-cloud-unit-test-$runIdentity"
 $lifecycleCheck = @"
 import asyncio
 import json
@@ -32,19 +35,21 @@ from custom_components.xiaomi_lock_cloud_backup.const import (
     MUTABLE_OPTION_KEYS,
     default_options,
 )
+from custom_components.xiaomi_lock_cloud_backup.settings import validate_settings
 
 manifest = json.loads(
     Path('/work/custom_components/xiaomi_lock_cloud_backup/manifest.json').read_text()
 )
 assert manifest['domain'] == 'xiaomi_lock_cloud_backup'
-assert manifest['version'] == INTEGRATION_VERSION == '0.0.5'
+assert manifest['version'] == INTEGRATION_VERSION == '0.0.6'
 candidate = default_options()
-candidate[CONF_RETENTION_DAYS] = 0
-assert _schema(candidate)(candidate)[CONF_RETENTION_DAYS] == 0
+candidate[CONF_RETENTION_DAYS] = '0'
+assert _schema(candidate)(candidate)[CONF_RETENTION_DAYS] == '0'
 option_candidate = {key: candidate[key] for key in MUTABLE_OPTION_KEYS}
 assert (
-    _options_schema(option_candidate)(option_candidate)[CONF_RETENTION_DAYS] == 0
+    _options_schema(option_candidate)(option_candidate)[CONF_RETENTION_DAYS] == '0'
 )
+assert validate_settings(candidate)[CONF_RETENTION_DAYS] == 0
 
 class FixtureCloud:
     default_server = 'cn'
@@ -96,7 +101,7 @@ async def main():
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == 'Xiaomi Lock Cloud Video Backup'
-    assert integration.version == '0.0.5'
+    assert integration.version == '0.0.6'
     cloud = FixtureCloud()
     hass.data['xiaomi_miot'] = {
         'sessions': {'fixture': cloud},
@@ -182,7 +187,7 @@ async def main():
     }
     manager = hass.data[DOMAIN][entry.entry_id]
     diagnostics = manager.safe_diagnostics()
-    assert diagnostics['integration_version'] == '0.0.5'
+    assert diagnostics['integration_version'] == '0.0.6'
     assert diagnostics['history_complete'] is False
     assert diagnostics['history_pages_completed'] == 0
     await manager._lock.acquire()
@@ -200,6 +205,7 @@ asyncio.run(main())
 $dockerArguments = @(
     "run",
     "--rm",
+    "--name", $lifecycleContainer,
     "--network", "none",
     "--env", "PYTHONDONTWRITEBYTECODE=1",
     "--env", "PYTHONPATH=/work",
@@ -217,6 +223,7 @@ if ($LASTEXITCODE -ne 0) {
 $unitArguments = @(
     "run",
     "--rm",
+    "--name", $unitContainer,
     "--network", "none",
     "--env", "PYTHONDONTWRITEBYTECODE=1",
     "--volume", "${projectRoot}:/work:ro",

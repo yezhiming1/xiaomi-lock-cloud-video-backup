@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-import voluptuous as vol
 
 from .const import (
     CONF_KEEP_AUDIO,
@@ -16,8 +17,6 @@ from .const import (
     CONF_SCHEDULE_TIME,
     CONF_TARGET_MODEL,
     DOMAIN,
-    MAX_RETENTION_DAYS,
-    MIN_RETENTION_DAYS,
     MUTABLE_OPTION_KEYS,
     XIAOMI_MIOT_DOMAIN,
     default_options,
@@ -43,11 +42,8 @@ def _schema(defaults: Mapping[str, object]) -> vol.Schema:
             ): str,
             vol.Required(
                 CONF_RETENTION_DAYS,
-                default=defaults[CONF_RETENTION_DAYS],
-            ): vol.All(
-                vol.Coerce(int),
-                vol.Range(min=MIN_RETENTION_DAYS, max=MAX_RETENTION_DAYS),
-            ),
+                default=str(defaults[CONF_RETENTION_DAYS]),
+            ): str,
             vol.Required(
                 CONF_MAX_DOWNLOADS_PER_RUN,
                 default=defaults[CONF_MAX_DOWNLOADS_PER_RUN],
@@ -69,11 +65,8 @@ def _options_schema(defaults: Mapping[str, object]) -> vol.Schema:
             ): str,
             vol.Required(
                 CONF_RETENTION_DAYS,
-                default=defaults[CONF_RETENTION_DAYS],
-            ): vol.All(
-                vol.Coerce(int),
-                vol.Range(min=MIN_RETENTION_DAYS, max=MAX_RETENTION_DAYS),
-            ),
+                default=str(defaults[CONF_RETENTION_DAYS]),
+            ): str,
             vol.Required(
                 CONF_MAX_DOWNLOADS_PER_RUN,
                 default=defaults[CONF_MAX_DOWNLOADS_PER_RUN],
