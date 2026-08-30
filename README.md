@@ -17,19 +17,19 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Candidate version: `V0.0.7` / integration manifest `0.0.7`. V0.0.6 reached
-  the target and preserved retention `0`; V0.0.7 fixes interrupted-run
-  recovery for valid regular outputs on NFS filesystems that report extra hard links.
+- Current version: `V0.0.7` / integration manifest `0.0.7`. It is installed on
+  the target with retention `0`, and its interrupted-run recovery has completed
+  successfully on NFS regular files that report extra hard links.
 - Event discovery has been exercised with model `xiaomi.lock.s1`.
 - Target discovery de-duplicates the same physical device across loaded cloud
   sessions. When the cloud device list has no matching model, it can fall back
   to Xiaomi Miot's loaded in-memory entity index while still requiring the
   entity's cloud object to be one of the loaded sessions.
 - The encrypted-media pipeline is covered by a synthetic end-to-end fixture.
-- Incremental and V0.0.3 historical real-account downloads have succeeded on
-  the current target. The history service reached explicit endpoint completion;
-  final history and incremental dry runs each reported zero pending items.
-  Treat this release as experimental.
+- Incremental and historical real-account downloads have succeeded on the
+  current target. V0.0.7 completed one bounded recovery/download run with no
+  failures; the following dry run reported zero pending items. Treat this
+  release as experimental.
 - V0.0.4 adds a bounded, de-identified local status journal for a separate
   recognition/operations consumer. V0.0.6 presents retention as validated
   numeric text so `0` can pass the frontend and disable downloader-owned deletion.
@@ -185,8 +185,8 @@ either value, remove and recreate the entry; existing media is left untouched.
 录像、账号、URL 或认证信息。
 
 本集成只实现增量与历史录像备份，不包含陌生人或人脸识别。目标环境已完成一次
-真实历史回填、最终零待处理复核和全部目标媒体解析；私有云接口仍可能随时变化，首次
-每日计划周期和长期稳定性继续保持 `UNKNOWN`。
+真实历史回填、V0.0.7 中断恢复、最终零待处理复核和只读消费者验收；私有云接口仍可能
+随时变化，首次每日计划周期和长期稳定性继续保持 `UNKNOWN`。
 
 ## Development
 
