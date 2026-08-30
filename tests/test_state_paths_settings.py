@@ -176,8 +176,12 @@ class SettingsTests(unittest.TestCase):
         self.assertNotIn("password", normalized)
 
     def test_zero_retention_disables_downloader_owned_deletion(self) -> None:
-        normalized = settings.validate_settings({const.CONF_RETENTION_DAYS: 0})
-        self.assertEqual(0, normalized[const.CONF_RETENTION_DAYS])
+        for value in (0, "0"):
+            with self.subTest(value=value):
+                normalized = settings.validate_settings(
+                    {const.CONF_RETENTION_DAYS: value}
+                )
+                self.assertEqual(0, normalized[const.CONF_RETENTION_DAYS])
 
     def test_invalid_model_schedule_and_output_are_rejected(self) -> None:
         cases = (
