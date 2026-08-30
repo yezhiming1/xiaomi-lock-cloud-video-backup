@@ -14,6 +14,8 @@ from .const import (
     CONF_RETENTION_DAYS,
     CONF_SCHEDULE_TIME,
     CONF_TARGET_MODEL,
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
     MUTABLE_OPTION_KEYS,
     default_options,
 )
@@ -54,7 +56,10 @@ def validate_settings(value: Mapping[str, object]) -> dict[str, object]:
         str(merged.get(CONF_OUTPUT_SUBDIRECTORY) or "")
     )
     retention = _bounded_integer(
-        merged.get(CONF_RETENTION_DAYS), 0, 3650, "RETENTION_DAYS_INVALID"
+        merged.get(CONF_RETENTION_DAYS),
+        MIN_RETENTION_DAYS,
+        MAX_RETENTION_DAYS,
+        "RETENTION_DAYS_INVALID",
     )
     maximum = _bounded_integer(
         merged.get(CONF_MAX_DOWNLOADS_PER_RUN),

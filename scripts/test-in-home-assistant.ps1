@@ -16,14 +16,20 @@ import custom_components.xiaomi_lock_cloud_backup.config_flow
 import custom_components.xiaomi_lock_cloud_backup.diagnostics
 import custom_components.xiaomi_lock_cloud_backup.hls
 import custom_components.xiaomi_lock_cloud_backup.manager
+from custom_components.xiaomi_lock_cloud_backup.config_flow import (
+    _options_schema,
+    _schema,
+)
 from custom_components.xiaomi_lock_cloud_backup import (
     async_setup,
     async_setup_entry,
     async_unload_entry,
 )
 from custom_components.xiaomi_lock_cloud_backup.const import (
+    CONF_RETENTION_DAYS,
     DOMAIN,
     INTEGRATION_VERSION,
+    MUTABLE_OPTION_KEYS,
     default_options,
 )
 
@@ -31,7 +37,14 @@ manifest = json.loads(
     Path('/work/custom_components/xiaomi_lock_cloud_backup/manifest.json').read_text()
 )
 assert manifest['domain'] == 'xiaomi_lock_cloud_backup'
-assert manifest['version'] == INTEGRATION_VERSION == '0.0.4'
+assert manifest['version'] == INTEGRATION_VERSION == '0.0.5'
+candidate = default_options()
+candidate[CONF_RETENTION_DAYS] = 0
+assert _schema(candidate)(candidate)[CONF_RETENTION_DAYS] == 0
+option_candidate = {key: candidate[key] for key in MUTABLE_OPTION_KEYS}
+assert (
+    _options_schema(option_candidate)(option_candidate)[CONF_RETENTION_DAYS] == 0
+)
 
 class FixtureCloud:
     default_server = 'cn'
@@ -83,7 +96,7 @@ async def main():
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == 'Xiaomi Lock Cloud Video Backup'
-    assert integration.version == '0.0.4'
+    assert integration.version == '0.0.5'
     cloud = FixtureCloud()
     hass.data['xiaomi_miot'] = {
         'sessions': {'fixture': cloud},
@@ -169,7 +182,7 @@ async def main():
     }
     manager = hass.data[DOMAIN][entry.entry_id]
     diagnostics = manager.safe_diagnostics()
-    assert diagnostics['integration_version'] == '0.0.4'
+    assert diagnostics['integration_version'] == '0.0.5'
     assert diagnostics['history_complete'] is False
     assert diagnostics['history_pages_completed'] == 0
     await manager._lock.acquire()
