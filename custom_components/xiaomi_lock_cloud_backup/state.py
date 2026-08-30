@@ -23,6 +23,8 @@ class BackupState:
     managed_files: dict[str, int] = field(default_factory=dict)
     last_run_status: str = "never"
     last_error_code: str = "none"
+    consecutive_run_failures: int = 0
+    status_report_sequence: int = 0
 
     @classmethod
     def initial(cls, cursor_ms: int) -> "BackupState":
@@ -43,6 +45,8 @@ class BackupState:
         managed = value.get("managed_files", {})
         status = value.get("last_run_status", "unknown")
         error_code = value.get("last_error_code", "none")
+        run_failures = value.get("consecutive_run_failures", 0)
+        report_sequence = value.get("status_report_sequence", 0)
         if not isinstance(cursor, int) or cursor < 0:
             raise BackupError("STATE_CURSOR_INVALID")
         if history_end is not None and (
@@ -81,6 +85,18 @@ class BackupState:
             raise BackupError("STATE_STATUS_INVALID")
         if not _is_code(error_code):
             raise BackupError("STATE_ERROR_CODE_INVALID")
+        if (
+            not isinstance(run_failures, int)
+            or isinstance(run_failures, bool)
+            or not 0 <= run_failures <= 100
+        ):
+            raise BackupError("STATE_RUN_FAILURES_INVALID")
+        if (
+            not isinstance(report_sequence, int)
+            or isinstance(report_sequence, bool)
+            or report_sequence < 0
+        ):
+            raise BackupError("STATE_REPORT_SEQUENCE_INVALID")
         return cls(
             cursor_ms=cursor,
             history_end_ms=history_end,
@@ -91,6 +107,8 @@ class BackupState:
             managed_files=dict(managed),
             last_run_status=status,
             last_error_code=error_code,
+            consecutive_run_failures=run_failures,
+            status_report_sequence=report_sequence,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -104,7 +122,20 @@ class BackupState:
             "last_run_status": self.last_run_status,
             "managed_files": dict(self.managed_files),
             "seen": list(self.seen),
+            "consecutive_run_failures": self.consecutive_run_failures,
+            "status_report_sequence": self.status_report_sequence,
         }
+
+    def begin_status_report(self) -> int:
+        self.status_report_sequence += 1
+        return self.status_report_sequence
+
+    def record_run_failure(self) -> int:
+        self.consecutive_run_failures = min(self.consecutive_run_failures + 1, 100)
+        return self.consecutive_run_failures
+
+    def record_run_success(self) -> None:
+        self.consecutive_run_failures = 0
 
     def has_seen(self, event_digest: str) -> bool:
         _require_digest(event_digest)

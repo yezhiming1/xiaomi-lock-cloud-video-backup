@@ -54,7 +54,7 @@ def validate_settings(value: Mapping[str, object]) -> dict[str, object]:
         str(merged.get(CONF_OUTPUT_SUBDIRECTORY) or "")
     )
     retention = _bounded_integer(
-        merged.get(CONF_RETENTION_DAYS), 1, 3650, "RETENTION_DAYS_INVALID"
+        merged.get(CONF_RETENTION_DAYS), 0, 3650, "RETENTION_DAYS_INVALID"
     )
     maximum = _bounded_integer(
         merged.get(CONF_MAX_DOWNLOADS_PER_RUN),

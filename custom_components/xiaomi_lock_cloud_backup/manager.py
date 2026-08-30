@@ -27,6 +27,7 @@ from .cloud import (
 from .const import (
     INTEGRATION_VERSION,
     MAX_EVENT_PAGES,
+    MAX_FAILURES_PER_EVENT,
     MAX_HISTORY_DOWNLOADS_PER_RUN,
     MEDIA_ROOT,
     STORAGE_KEY_PREFIX,
@@ -34,9 +35,15 @@ from .const import (
 )
 from .hls import download_hls_once, inspect_local_output
 from .models import BackupError, CloudEvent, CloudTarget
-from .paths import ensure_output_directory, safe_managed_path, unlink_managed_file
+from .paths import (
+    ensure_output_directory,
+    resolve_output_directory,
+    safe_managed_path,
+    unlink_managed_file,
+)
 from .settings import BackupOptions, options_from_mappings
 from .state import BackupState
+from .status_journal import append_status_report, status_report_key
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -116,6 +123,9 @@ class BackupManager:
             "seen_count": len(state.seen),
             "pending_failure_count": len(state.failures),
             "managed_file_count": len(state.managed_files),
+            "consecutive_run_failure_count": state.consecutive_run_failures,
+            "status_report_count": state.status_report_sequence,
+            "status_journal_enabled": True,
             "history_complete": state.history_complete,
             "history_pages_completed": state.history_pages_completed,
             "keep_audio": self.options.keep_audio,
@@ -161,6 +171,13 @@ class BackupManager:
                 raise BackupError("BACKUP_MANAGER_STOPPED")
             state = self._require_state()
             run_now_ms = int(time.time() * 1000)
+            report_key: str | None = None
+            if not dry_run:
+                report_key = status_report_key(
+                    self.entry.entry_id,
+                    state.begin_status_report(),
+                    "incremental",
+                )
             try:
                 target = await async_find_single_target(
                     self.hass, self.options.target_model
@@ -174,13 +191,16 @@ class BackupManager:
                 if not dry_run:
                     state.last_run_status = exc.code
                     state.last_error_code = exc.code
-                    await self._save_state()
+                    await self._async_record_run_failure(report_key, exc.code)
                 raise
             except Exception:
                 if not dry_run:
                     state.last_run_status = "BACKUP_UNEXPECTED"
                     state.last_error_code = "BACKUP_UNEXPECTED"
-                    await self._save_state()
+                    await self._async_record_run_failure(
+                        report_key,
+                        "BACKUP_UNEXPECTED",
+                    )
                 raise BackupError("BACKUP_UNEXPECTED") from None
 
             unseen_events = [
@@ -197,13 +217,23 @@ class BackupManager:
                     "selected": len(selected_events),
                 }
 
-            context, counts = await self._async_prepare_execution(run_now_ms)
-            await self._async_download_events(
-                target,
-                selected_events,
-                context,
-                counts,
-            )
+            try:
+                context, counts = await self._async_prepare_execution(run_now_ms)
+                await self._async_download_events(
+                    target,
+                    selected_events,
+                    context,
+                    counts,
+                )
+            except BackupError as exc:
+                await self._async_record_run_failure(report_key, exc.code)
+                raise
+            except Exception:
+                await self._async_record_run_failure(
+                    report_key,
+                    "BACKUP_UNEXPECTED",
+                )
+                raise BackupError("BACKUP_UNEXPECTED") from None
 
             if counts.failed or counts.retention_missing or counts.retention_failures:
                 status = "partial"
@@ -213,6 +243,7 @@ class BackupManager:
                 status = "ok"
             self._apply_final_error(counts)
             state.last_run_status = status
+            state.record_run_success()
             await self._save_state()
             result = {
                 "status": status,
@@ -236,7 +267,70 @@ class BackupManager:
                 counts.failed,
                 counts.deleted,
             )
+            if counts.quarantined or counts.retention_missing or counts.retention_failures:
+                report_state = "failed"
+                report_attempts = MAX_FAILURES_PER_EVENT
+            elif counts.failed:
+                report_state = "retrying"
+                report_attempts = max(state.failures.values(), default=1)
+            else:
+                report_state = "downloaded"
+                report_attempts = 0
+            await self._async_append_status_report(
+                report_key,
+                state=report_state,
+                attempts=report_attempts,
+                error_code=counts.last_failure_code,
+                output_directory=context.output_directory,
+            )
             return result
+
+    async def _async_record_run_failure(
+        self,
+        report_key: str | None,
+        error_code: str,
+    ) -> None:
+        state = self._require_state()
+        attempts = state.record_run_failure()
+        await self._save_state()
+        await self._async_append_status_report(
+            report_key,
+            state="failed" if attempts >= MAX_FAILURES_PER_EVENT else "retrying",
+            attempts=attempts,
+            error_code=error_code,
+        )
+
+    async def _async_append_status_report(
+        self,
+        report_key: str | None,
+        *,
+        state: str,
+        attempts: int,
+        error_code: str,
+        output_directory: Path | None = None,
+    ) -> None:
+        if report_key is None:
+            return
+        try:
+            directory = output_directory or await self.hass.async_add_executor_job(
+                resolve_output_directory,
+                self.media_root,
+                self.options.output_subdirectory,
+            )
+            await self.hass.async_add_executor_job(
+                partial(
+                    append_status_report,
+                    directory,
+                    report_key=report_key,
+                    state=state,
+                    attempts=attempts,
+                    error_code=error_code,
+                )
+            )
+        except BackupError as exc:
+            _LOGGER.error("Status journal update failed with code=%s", exc.code)
+        except Exception:
+            _LOGGER.error("Status journal update failed with code=STATUS_JOURNAL_UNEXPECTED")
 
     async def async_run_history_backfill(
         self,
@@ -506,7 +600,7 @@ class BackupManager:
             raise BackupError("OUTPUT_PREPARATION_FAILED") from None
 
         counts = _RunCounts()
-        if apply_retention:
+        if apply_retention and self.options.retention_days > 0:
             (
                 counts.deleted,
                 counts.retention_missing,

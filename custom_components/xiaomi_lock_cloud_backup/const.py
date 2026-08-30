@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 DOMAIN = "xiaomi_lock_cloud_backup"
-INTEGRATION_VERSION = "0.0.3"
+INTEGRATION_VERSION = "0.0.4"
 XIAOMI_MIOT_DOMAIN = "xiaomi_miot"
 
 CONF_KEEP_AUDIO = "keep_audio"
