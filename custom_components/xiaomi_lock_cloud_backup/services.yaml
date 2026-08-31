@@ -35,3 +35,17 @@ run_history_backfill:
           min: 1
           max: 100
           mode: box
+
+migrate_filenames:
+  name: Migrate recording filenames
+  description: >-
+    Rename legacy managed recordings to Beijing-time names without overwriting
+    existing files, or perform a read-only validation first.
+  fields:
+    dry_run:
+      name: Dry run
+      description: Validate the migration without renaming files or updating state.
+      required: false
+      default: true
+      selector:
+        boolean:

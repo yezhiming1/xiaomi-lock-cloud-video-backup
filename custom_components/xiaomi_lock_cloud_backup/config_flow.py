@@ -8,8 +8,11 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
 from .const import (
+    CONF_EVENT_DELAY_SECONDS,
+    CONF_EVENT_ENTITY_IDS,
     CONF_KEEP_AUDIO,
     CONF_MAX_DOWNLOADS_PER_RUN,
     CONF_OUTPUT_SUBDIRECTORY,
@@ -36,6 +39,16 @@ def _schema(defaults: Mapping[str, object]) -> vol.Schema:
                 CONF_SCHEDULE_TIME,
                 default=defaults[CONF_SCHEDULE_TIME],
             ): str,
+            vol.Optional(
+                CONF_EVENT_ENTITY_IDS,
+                default=defaults[CONF_EVENT_ENTITY_IDS],
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="event", multiple=True)
+            ),
+            vol.Required(
+                CONF_EVENT_DELAY_SECONDS,
+                default=defaults[CONF_EVENT_DELAY_SECONDS],
+            ): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
             vol.Required(
                 CONF_OUTPUT_SUBDIRECTORY,
                 default=defaults[CONF_OUTPUT_SUBDIRECTORY],
@@ -63,6 +76,16 @@ def _options_schema(defaults: Mapping[str, object]) -> vol.Schema:
                 CONF_SCHEDULE_TIME,
                 default=defaults[CONF_SCHEDULE_TIME],
             ): str,
+            vol.Optional(
+                CONF_EVENT_ENTITY_IDS,
+                default=defaults[CONF_EVENT_ENTITY_IDS],
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="event", multiple=True)
+            ),
+            vol.Required(
+                CONF_EVENT_DELAY_SECONDS,
+                default=defaults[CONF_EVENT_DELAY_SECONDS],
+            ): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
             vol.Required(
                 CONF_RETENTION_DAYS,
                 default=str(defaults[CONF_RETENTION_DAYS]),

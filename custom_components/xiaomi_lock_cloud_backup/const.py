@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 DOMAIN = "xiaomi_lock_cloud_backup"
-INTEGRATION_VERSION = "0.0.7"
+INTEGRATION_VERSION = "0.0.8"
 XIAOMI_MIOT_DOMAIN = "xiaomi_miot"
 
 CONF_KEEP_AUDIO = "keep_audio"
+CONF_EVENT_DELAY_SECONDS = "event_delay_seconds"
+CONF_EVENT_ENTITY_IDS = "event_entity_ids"
 CONF_MAX_DOWNLOADS_PER_RUN = "max_downloads_per_run"
 CONF_OUTPUT_SUBDIRECTORY = "output_subdirectory"
 CONF_RETENTION_DAYS = "retention_days"
@@ -16,6 +18,8 @@ CONF_SCHEDULE_TIME = "schedule_time"
 CONF_TARGET_MODEL = "target_model"
 
 DEFAULT_KEEP_AUDIO = True
+DEFAULT_EVENT_DELAY_SECONDS = 120
+DEFAULT_EVENT_ENTITY_IDS: list[str] = []
 DEFAULT_MAX_DOWNLOADS_PER_RUN = 100
 DEFAULT_OUTPUT_SUBDIRECTORY = "xiaomi_lock_cloud_backup"
 DEFAULT_RETENTION_DAYS = 30
@@ -29,6 +33,7 @@ MAX_RETENTION_DAYS = 3650
 MEDIA_ROOT = Path("/media")
 SERVICE_RUN_BACKUP = "run_backup"
 SERVICE_RUN_HISTORY_BACKFILL = "run_history_backfill"
+SERVICE_MIGRATE_FILENAMES = "migrate_filenames"
 STORAGE_VERSION = 1
 STORAGE_KEY_PREFIX = f"{DOMAIN}.state"
 
@@ -40,6 +45,8 @@ MAX_SEEN_IDENTIFIERS = 4096
 MAX_MANAGED_FILES = 4096
 
 MUTABLE_OPTION_KEYS = (
+    CONF_EVENT_DELAY_SECONDS,
+    CONF_EVENT_ENTITY_IDS,
     CONF_KEEP_AUDIO,
     CONF_MAX_DOWNLOADS_PER_RUN,
     CONF_RETENTION_DAYS,
@@ -50,6 +57,8 @@ MUTABLE_OPTION_KEYS = (
 def default_options() -> dict[str, object]:
     """Return a fresh set of public, non-secret defaults."""
     return {
+        CONF_EVENT_DELAY_SECONDS: DEFAULT_EVENT_DELAY_SECONDS,
+        CONF_EVENT_ENTITY_IDS: list(DEFAULT_EVENT_ENTITY_IDS),
         CONF_KEEP_AUDIO: DEFAULT_KEEP_AUDIO,
         CONF_MAX_DOWNLOADS_PER_RUN: DEFAULT_MAX_DOWNLOADS_PER_RUN,
         CONF_OUTPUT_SUBDIRECTORY: DEFAULT_OUTPUT_SUBDIRECTORY,

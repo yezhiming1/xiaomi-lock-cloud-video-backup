@@ -13,6 +13,7 @@ from .const import (
     DEFAULT_HISTORY_MAX_DOWNLOADS,
     DOMAIN,
     MAX_HISTORY_DOWNLOADS_PER_RUN,
+    SERVICE_MIGRATE_FILENAMES,
     SERVICE_RUN_BACKUP,
     SERVICE_RUN_HISTORY_BACKFILL,
 )
@@ -60,6 +61,17 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
         except Exception:
             raise HomeAssistantError("BACKUP_UNEXPECTED") from None
 
+    async def async_handle_migrate_filenames(call: ServiceCall) -> dict[str, object]:
+        manager = _single_loaded_manager(hass)
+        try:
+            return await manager.async_migrate_filenames(
+                dry_run=bool(call.data["dry_run"])
+            )
+        except BackupError as exc:
+            raise HomeAssistantError(exc.code) from None
+        except Exception:
+            raise HomeAssistantError("FILENAME_MIGRATION_UNEXPECTED") from None
+
     if not hass.services.has_service(DOMAIN, SERVICE_RUN_BACKUP):
         hass.services.async_register(
             DOMAIN,
@@ -74,6 +86,14 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             SERVICE_RUN_HISTORY_BACKFILL,
             async_handle_history_backfill,
             schema=HISTORY_SERVICE_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_MIGRATE_FILENAMES):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_MIGRATE_FILENAMES,
+            async_handle_migrate_filenames,
+            schema=SERVICE_SCHEMA,
             supports_response=SupportsResponse.OPTIONAL,
         )
     return True

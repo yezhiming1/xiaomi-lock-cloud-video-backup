@@ -7,7 +7,7 @@ from typing import Any
 
 from .const import MAX_FAILURES_PER_EVENT, MAX_MANAGED_FILES, MAX_SEEN_IDENTIFIERS
 from .models import BackupError
-from .paths import is_managed_filename
+from .paths import is_managed_filename, legacy_filename_details
 
 
 @dataclass(slots=True)
@@ -21,6 +21,8 @@ class BackupState:
     seen: list[str] = field(default_factory=list)
     failures: dict[str, int] = field(default_factory=dict)
     managed_files: dict[str, int] = field(default_factory=dict)
+    event_files: dict[str, str] = field(default_factory=dict)
+    pending_files: dict[str, str] = field(default_factory=dict)
     last_run_status: str = "never"
     last_error_code: str = "none"
     consecutive_run_failures: int = 0
@@ -43,6 +45,8 @@ class BackupState:
         seen = value.get("seen", [])
         failures = value.get("failures", {})
         managed = value.get("managed_files", {})
+        event_files = value.get("event_files", {})
+        pending_files = value.get("pending_files", {})
         status = value.get("last_run_status", "unknown")
         error_code = value.get("last_error_code", "none")
         run_failures = value.get("consecutive_run_failures", 0)
@@ -81,6 +85,12 @@ class BackupState:
             raise BackupError("STATE_MANAGED_INVALID")
         if len(managed) > MAX_MANAGED_FILES:
             raise BackupError("STATE_MANAGED_INVALID")
+        if not _is_file_mapping(event_files) or any(
+            filename not in managed for filename in event_files.values()
+        ):
+            raise BackupError("STATE_EVENT_FILES_INVALID")
+        if not _is_file_mapping(pending_files):
+            raise BackupError("STATE_PENDING_FILES_INVALID")
         if not _is_code(status):
             raise BackupError("STATE_STATUS_INVALID")
         if not _is_code(error_code):
@@ -105,6 +115,8 @@ class BackupState:
             seen=list(dict.fromkeys(seen[-MAX_SEEN_IDENTIFIERS:])),
             failures=dict(list(failures.items())[-MAX_SEEN_IDENTIFIERS:]),
             managed_files=dict(managed),
+            event_files=dict(list(event_files.items())[-MAX_MANAGED_FILES:]),
+            pending_files=dict(list(pending_files.items())[-MAX_MANAGED_FILES:]),
             last_run_status=status,
             last_error_code=error_code,
             consecutive_run_failures=run_failures,
@@ -121,6 +133,8 @@ class BackupState:
             "last_error_code": self.last_error_code,
             "last_run_status": self.last_run_status,
             "managed_files": dict(self.managed_files),
+            "event_files": dict(self.event_files),
+            "pending_files": dict(self.pending_files),
             "seen": list(self.seen),
             "consecutive_run_failures": self.consecutive_run_failures,
             "status_report_sequence": self.status_report_sequence,
@@ -159,6 +173,8 @@ class BackupState:
         self.seen = self.seen[-MAX_SEEN_IDENTIFIERS:]
         self.failures.pop(event_digest, None)
         self.managed_files[filename] = completed_ms
+        self.event_files[event_digest] = filename
+        self.pending_files.pop(event_digest, None)
         self.cursor_ms = max(self.cursor_ms, event_time_ms)
 
     def require_managed_capacity(self, filename: str) -> None:
@@ -169,6 +185,64 @@ class BackupState:
             and len(self.managed_files) >= MAX_MANAGED_FILES
         ):
             raise BackupError("STATE_MANAGED_CAPACITY_REACHED")
+
+    def filename_for_event(self, event_digest: str) -> str | None:
+        _require_digest(event_digest)
+        return self.pending_files.get(event_digest) or self.event_files.get(event_digest)
+
+    def reserve_filename(self, event_digest: str, filename: str) -> None:
+        _require_digest(event_digest)
+        if not is_managed_filename(filename):
+            raise BackupError("STATE_MANAGED_INVALID")
+        existing = self.filename_for_event(event_digest)
+        if existing is not None and existing != filename:
+            raise BackupError("STATE_FILENAME_RESERVATION_CONFLICT")
+        if filename in self.managed_files and self.event_files.get(event_digest) != filename:
+            raise BackupError("STATE_FILENAME_RESERVATION_CONFLICT")
+        if any(
+            other_digest != event_digest and other_filename == filename
+            for other_digest, other_filename in self.pending_files.items()
+        ):
+            raise BackupError("STATE_FILENAME_RESERVATION_CONFLICT")
+        if len(self.pending_files) >= MAX_MANAGED_FILES and event_digest not in self.pending_files:
+            raise BackupError("STATE_PENDING_CAPACITY_REACHED")
+        self.pending_files[event_digest] = filename
+
+    def remove_managed_file(self, filename: str) -> None:
+        self.managed_files.pop(filename, None)
+        self.event_files = {
+            digest: bound
+            for digest, bound in self.event_files.items()
+            if bound != filename
+        }
+
+    def migrate_filenames(self, mapping: dict[str, str]) -> None:
+        if len(set(mapping.values())) != len(mapping):
+            raise BackupError("STATE_FILENAME_MIGRATION_INVALID")
+        updated_managed = dict(self.managed_files)
+        for old_name, new_name in mapping.items():
+            if old_name not in updated_managed or new_name in updated_managed:
+                raise BackupError("STATE_FILENAME_MIGRATION_INVALID")
+            updated_managed[new_name] = updated_managed.pop(old_name)
+        self.managed_files = updated_managed
+        self.event_files = {
+            digest: mapping.get(filename, filename)
+            for digest, filename in self.event_files.items()
+        }
+        self.pending_files = {
+            digest: mapping.get(filename, filename)
+            for digest, filename in self.pending_files.items()
+        }
+        for old_name, new_name in mapping.items():
+            details = legacy_filename_details(old_name)
+            if details is None:
+                raise BackupError("STATE_FILENAME_MIGRATION_INVALID")
+            prefix = details[1]
+            matches = [digest for digest in self.seen if digest.startswith(prefix)]
+            if len(matches) > 1:
+                raise BackupError("STATE_FILENAME_MIGRATION_AMBIGUOUS")
+            if matches:
+                self.event_files[matches[0]] = new_name
 
     def record_failure(self, event_digest: str, event_time_ms: int) -> bool:
         """Record a failure; return true when the event is quarantined."""
@@ -183,6 +257,7 @@ class BackupState:
             )
             return False
         self.failures.pop(event_digest, None)
+        self.pending_files.pop(event_digest, None)
         if event_digest not in self.seen:
             self.seen.append(event_digest)
         self.seen = self.seen[-MAX_SEEN_IDENTIFIERS:]
@@ -233,6 +308,14 @@ class BackupState:
 def _is_digest(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(
         character in "0123456789abcdef" for character in value
+    )
+
+
+def _is_file_mapping(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and len(value) <= MAX_MANAGED_FILES
+        and all(_is_digest(key) and is_managed_filename(filename) for key, filename in value.items())
     )
 
 
