@@ -17,8 +17,8 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Current source candidate: `V0.0.8` / integration manifest `0.0.8`. The target
-  remains on V0.0.7 until the V0.0.8 release and deployment gates pass.
+- Current release: `V0.0.8` / integration manifest `0.0.8`. The target is
+  running V0.0.8 after a verified HACS install and Home Assistant restart.
 - V0.0.8 can listen to explicitly selected Home Assistant `event.*` entities,
   debounce related changes, and run an incremental backup 120 seconds after the
   last change. The daily 03:30 run remains a reconciliation path.
@@ -29,9 +29,9 @@ atomically publishes validated MP4 files.
   entity's cloud object to be one of the loaded sessions.
 - The encrypted-media pipeline is covered by a synthetic end-to-end fixture.
 - Incremental and historical real-account downloads have succeeded on the
-  current target. V0.0.7 completed one bounded recovery/download run with no
-  failures; the following dry run reported zero pending items. Treat this
-  release as experimental.
+  current target. The V0.0.8 deployment migrated 34 managed legacy names,
+  downloaded five pending recordings with no failure, and finished with zero
+  pending items. Treat this release as experimental.
 - V0.0.4 adds a bounded, de-identified local status journal for a separate
   recognition/operations consumer. V0.0.6 presents retention as validated
   numeric text so `0` can pass the frontend and disable downloader-owned deletion.
