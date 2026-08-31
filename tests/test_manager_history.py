@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from types import MethodType, ModuleType
+import tempfile
+from types import MethodType, ModuleType, SimpleNamespace
 import unittest
 
 from module_loader import load
@@ -25,6 +26,8 @@ def _install_home_assistant_stubs() -> None:
     config_entries.ConfigEntry = object
     core.HomeAssistant = object
     core.callback = lambda function: function
+    event.async_call_later = lambda *_args, **_kwargs: None
+    event.async_track_state_change_event = lambda *_args, **_kwargs: None
     event.async_track_time_change = lambda *_args, **_kwargs: None
     storage.Store = object
 
@@ -67,6 +70,92 @@ def _fixture_manager(state):
 
 
 class HistoryManagerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_same_second_reservations_use_collision_suffixes(self) -> None:
+        class FixtureHass:
+            @staticmethod
+            async def async_add_executor_job(function, *args):
+                return function(*args)
+
+        state = state_module.BackupState.initial(1)
+        manager = object.__new__(manager_module.BackupManager)
+        manager.hass = FixtureHass()
+
+        async def save_state(_self):
+            return None
+
+        manager._save_state = MethodType(save_state, manager)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory).resolve()
+            manager.media_root = output
+            first = await manager._async_reserve_filename(
+                state,
+                output,
+                1_788_134_400_000,
+                "a" * 64,
+            )
+            second = await manager._async_reserve_filename(
+                state,
+                output,
+                1_788_134_400_500,
+                "b" * 64,
+            )
+        self.assertEqual("xiaomi_lock_20260831T080000.mp4", first)
+        self.assertEqual("xiaomi_lock_20260831T080000-02.mp4", second)
+
+    async def test_event_changes_debounce_for_two_minutes(self) -> None:
+        manager = object.__new__(manager_module.BackupManager)
+        manager.hass = object()
+        manager.options = SimpleNamespace(
+            event_entity_ids=("event.fixture_pass", "event.fixture_stay"),
+            event_delay_seconds=120,
+        )
+        manager._remove_event_listener = None
+        manager._cancel_event_delay = None
+        captured: dict[str, object] = {}
+        cancelled = 0
+
+        def track(_hass, entity_ids, action):
+            captured["entity_ids"] = tuple(entity_ids)
+            captured["action"] = action
+            return lambda: None
+
+        def call_later(_hass, delay, action):
+            nonlocal cancelled
+            captured["delay"] = delay
+            captured["delayed_action"] = action
+
+            def cancel():
+                nonlocal cancelled
+                cancelled += 1
+
+            return cancel
+
+        original_track = manager_module.async_track_state_change_event
+        original_later = manager_module.async_call_later
+        manager_module.async_track_state_change_event = track
+        manager_module.async_call_later = call_later
+        try:
+            manager._install_event_triggers()
+            action = captured["action"]
+            event = SimpleNamespace(
+                data={
+                    "old_state": SimpleNamespace(state="old", attributes={}),
+                    "new_state": SimpleNamespace(state="new", attributes={}),
+                }
+            )
+            action(event)
+            action(event)
+        finally:
+            manager_module.async_track_state_change_event = original_track
+            manager_module.async_call_later = original_later
+
+        self.assertEqual(
+            ("event.fixture_pass", "event.fixture_stay"),
+            captured["entity_ids"],
+        )
+        self.assertEqual(120, captured["delay"])
+        self.assertEqual(1, cancelled)
+
     async def test_infrastructure_failure_is_final_only_on_third_run(self) -> None:
         state = state_module.BackupState.initial(5000)
         manager = _fixture_manager(state)

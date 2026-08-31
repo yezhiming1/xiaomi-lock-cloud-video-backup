@@ -17,9 +17,11 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Current version: `V0.0.7` / integration manifest `0.0.7`. It is installed on
-  the target with retention `0`, and its interrupted-run recovery has completed
-  successfully on NFS regular files that report extra hard links.
+- Current source candidate: `V0.0.8` / integration manifest `0.0.8`. The target
+  remains on V0.0.7 until the V0.0.8 release and deployment gates pass.
+- V0.0.8 can listen to explicitly selected Home Assistant `event.*` entities,
+  debounce related changes, and run an incremental backup 120 seconds after the
+  last change. The daily 03:30 run remains a reconciliation path.
 - Event discovery has been exercised with model `xiaomi.lock.s1`.
 - Target discovery de-duplicates the same physical device across loaded cloud
   sessions. When the cloud device list has no matching model, it can fall back
@@ -101,6 +103,8 @@ integration from the UI.
 Defaults:
 
 - Daily schedule: `03:30:00` in Home Assistant's local timezone
+- Event-trigger delay: 120 seconds after the last change from the selected
+  `event.*` entities; no entity is selected by default
 - Output leaf: `/media/xiaomi_lock_cloud_backup`
 - Retention: 30 days
 - Maximum downloads per run: 100
@@ -140,9 +144,24 @@ that call, not a promise about Xiaomi's total retention history. Historical
 runs never invoke retention deletion; the configured retention policy remains
 owned by the normal daily backup path.
 
-Published files use the Xiaomi event creation time in UTC, not the download
-time: `xiaomi_lock_YYYYMMDDTHHMMSSmmmZ_<digest>.mp4`. Convert the `Z` timestamp
-to the desired local timezone when reading it.
+Published files use the Xiaomi event creation time converted to Beijing time,
+not the download time: `xiaomi_lock_YYYYMMDDTHHMMSS.mp4`. If distinct events
+share the same local second, later files use `-02`, `-03`, and so on; existing
+paths are never overwritten.
+
+V0.0.8 also exposes an explicit filename migration service. Always run the
+read-only check first, then apply only with a verified state and media backup:
+
+```yaml
+action: xiaomi_lock_cloud_backup.migrate_filenames
+data:
+  dry_run: true
+response_variable: migration_check
+```
+
+Changing `dry_run` to `false` migrates only legacy integration-managed MP4
+names and the corresponding Home Assistant Store bindings. It refuses state or
+filesystem mismatches and does not contact or rename any 115 object.
 
 Failures use fixed codes. An individual recording is retried on later runs and
 quarantined after three failures so a permanently incompatible item cannot
@@ -167,7 +186,9 @@ either value, remove and recreate the entry; existing media is left untouched.
 用户先在 Home Assistant 中挂载，本集成不会创建共享、修改挂载或探测 NAS 凭据。
 目标文件系统还必须支持同目录硬链接和 `fsync`，用于无覆盖原子发布；不支持时会以
 固定错误码停止，不会退化为覆盖已有文件。
-首次配置的每日增量只从当前时间开始，默认每天本地时间 03:30 执行，保留 30 天。
+首次配置的增量游标只从当前时间开始。V0.0.8 可监听用户明确选择的“经过/停留”
+`event.*` 实体，在最后一次相关变化 120 秒后执行增量下载；每天本地时间 03:30 的任务
+保留为遗漏核对，默认保留 30 天。未选择事件实体时只运行 03:30 核对。
 历史录像不会自动下载；`run_history_backfill` 使用独立、可恢复的向过去游标，只有一页
 全部处理完才提交进度，不会倒退每日增量游标。空白时间段若云端仍返回继续标记，会继续
 向更早时间查找；只有接口明确结束或到达绝对时间边界才报告完成。
@@ -181,6 +202,9 @@ either value, remove and recreate the entry; existing media is left untouched.
 归一化为整数，使 `0` 能保存并关闭下载器删除，把删除职责交给完成远端校验的独立备份任务。
 `V0.0.7` 允许对 NFS 上带额外硬链接的普通文件做只读媒体校验并补记中断状态；符号链接
 仍被拒绝，保留删除仍只允许单链接的已登记普通文件。
+`V0.0.8` 把新录像改为北京时间秒级文件名 `xiaomi_lock_YYYYMMDDTHHMMSS.mp4`；同秒
+冲突依次增加 `-02`、`-03`，绝不覆盖。显式 `migrate_filenames` 服务可先 dry-run，
+再同步迁移历史录像文件和 HA Store 绑定；它不调用 115。
 状态日志只包含固定状态、固定错误码、次数、UTC 记录时间和不可逆摘要，不包含设备、
 录像、账号、URL 或认证信息。
 

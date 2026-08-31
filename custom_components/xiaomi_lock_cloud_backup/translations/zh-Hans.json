@@ -8,6 +8,8 @@
         "data": {
           "target_model": "目标型号",
           "schedule_time": "每日本地时间（HH:MM:SS）",
+          "event_entity_ids": "门前经过与停留事件实体",
+          "event_delay_seconds": "事件发生后的等待秒数",
           "output_subdirectory": "/media 下的子目录",
           "retention_days": "保留天数（0 表示关闭自动删除）",
           "max_downloads_per_run": "每次最多下载数量",
@@ -29,6 +31,8 @@
         "title": "备份选项",
         "data": {
           "schedule_time": "每日本地时间（HH:MM:SS）",
+          "event_entity_ids": "门前经过与停留事件实体",
+          "event_delay_seconds": "事件发生后的等待秒数",
           "retention_days": "保留天数（0 表示关闭自动删除）",
           "max_downloads_per_run": "每次最多下载数量",
           "keep_audio": "有音轨时保留音频"
@@ -61,6 +65,16 @@
         "max_downloads": {
           "name": "最多下载数量",
           "description": "本次串行回填最多选择的录像数量。"
+        }
+      }
+    },
+    "migrate_filenames": {
+      "name": "迁移录像文件名",
+      "description": "在不覆盖文件的前提下，把旧受管录像改为北京时间名称。",
+      "fields": {
+        "dry_run": {
+          "name": "只读预检",
+          "description": "只验证迁移并返回数量，不改名也不更新状态。"
         }
       }
     }

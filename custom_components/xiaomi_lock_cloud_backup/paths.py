@@ -6,13 +6,21 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+from datetime import datetime, timedelta, timezone
 
 from .models import BackupError
 
 
-_MANAGED_FILENAME_PATTERN = re.compile(
+_LEGACY_MANAGED_FILENAME_PATTERN = re.compile(
     r"xiaomi_lock_\d{8}T\d{9}Z_[0-9a-f]{12}\.mp4"
 )
+_CURRENT_MANAGED_FILENAME_PATTERN = re.compile(
+    r"xiaomi_lock_\d{8}T\d{6}(?:-\d{2,3})?\.mp4"
+)
+_LEGACY_DETAILS_PATTERN = re.compile(
+    r"xiaomi_lock_(?P<stamp>\d{8}T\d{9}Z)_(?P<digest>[0-9a-f]{12})\.mp4"
+)
+_BEIJING = timezone(timedelta(hours=8), name="Asia/Shanghai")
 
 
 def validate_output_subdirectory(value: str) -> str:
@@ -106,7 +114,150 @@ def unlink_managed_file(
 
 
 def is_managed_filename(value: object) -> bool:
-    return isinstance(value, str) and bool(_MANAGED_FILENAME_PATTERN.fullmatch(value))
+    return isinstance(value, str) and bool(
+        _LEGACY_MANAGED_FILENAME_PATTERN.fullmatch(value)
+        or _CURRENT_MANAGED_FILENAME_PATTERN.fullmatch(value)
+    )
+
+
+def is_legacy_managed_filename(value: object) -> bool:
+    return isinstance(value, str) and bool(
+        _LEGACY_MANAGED_FILENAME_PATTERN.fullmatch(value)
+    )
+
+
+def current_filename(event_time_ms: int, sequence: int = 1) -> str:
+    if (
+        not isinstance(event_time_ms, int)
+        or isinstance(event_time_ms, bool)
+        or event_time_ms < 0
+        or not isinstance(sequence, int)
+        or isinstance(sequence, bool)
+        or not 1 <= sequence <= 999
+    ):
+        raise BackupError("MANAGED_FILENAME_INVALID")
+    stamp = datetime.fromtimestamp(
+        event_time_ms / 1000,
+        tz=timezone.utc,
+    ).astimezone(_BEIJING).strftime("%Y%m%dT%H%M%S")
+    suffix = "" if sequence == 1 else f"-{sequence:02d}"
+    return f"xiaomi_lock_{stamp}{suffix}.mp4"
+
+
+def legacy_filename_details(value: str) -> tuple[int, str] | None:
+    match = _LEGACY_DETAILS_PATTERN.fullmatch(value)
+    if not match:
+        return None
+    try:
+        parsed = datetime.strptime(
+            match.group("stamp"),
+            "%Y%m%dT%H%M%S%fZ",
+        ).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return int(parsed.timestamp() * 1000), match.group("digest")
+
+
+def build_filename_migration(filenames: list[str]) -> dict[str, str]:
+    """Build a deterministic no-overwrite legacy-to-Beijing mapping."""
+    legacy: list[tuple[int, str]] = []
+    occupied = {name for name in filenames if not is_legacy_managed_filename(name)}
+    for name in filenames:
+        details = legacy_filename_details(name)
+        if details is not None:
+            legacy.append((details[0], name))
+    mapping: dict[str, str] = {}
+    for event_time_ms, name in sorted(legacy):
+        for sequence in range(1, 1000):
+            candidate = current_filename(event_time_ms, sequence)
+            if candidate not in occupied:
+                mapping[name] = candidate
+                occupied.add(candidate)
+                break
+        else:
+            raise BackupError("FILENAME_COLLISION_CAPACITY_REACHED")
+    return mapping
+
+
+def migrate_managed_filenames(
+    media_root: Path,
+    output_directory: Path,
+    mapping: dict[str, str],
+) -> None:
+    """Rename regular managed files without overwriting any destination."""
+    _validate_existing_directory(media_root, output_directory)
+    items = list(mapping.items())
+    for old_name, new_name in items:
+        if not is_legacy_managed_filename(old_name) or not is_managed_filename(new_name):
+            raise BackupError("FILENAME_MIGRATION_INVALID")
+        old_path = safe_managed_path(media_root, output_directory, old_name)
+        new_path = safe_managed_path(media_root, output_directory, new_name)
+        try:
+            metadata = old_path.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            raise BackupError("FILENAME_MIGRATION_SOURCE_MISSING") from None
+        if not stat.S_ISREG(metadata.st_mode) or old_path.is_symlink():
+            raise BackupError("FILENAME_MIGRATION_SOURCE_UNSAFE")
+        if new_path.exists() or new_path.is_symlink():
+            raise BackupError("FILENAME_MIGRATION_TARGET_EXISTS")
+    completed: list[tuple[str, str]] = []
+    try:
+        for old_name, new_name in items:
+            old_path = output_directory / old_name
+            new_path = output_directory / new_name
+            os.link(old_path, new_path, follow_symlinks=False)
+            if old_path.stat(follow_symlinks=False).st_ino != new_path.stat(
+                follow_symlinks=False
+            ).st_ino:
+                raise BackupError("FILENAME_MIGRATION_LINK_MISMATCH")
+            os.unlink(old_path)
+            completed.append((old_name, new_name))
+        _fsync_directory(output_directory)
+    except Exception:
+        _rollback_filename_items(output_directory, completed)
+        raise
+
+
+def rollback_managed_filenames(
+    media_root: Path,
+    output_directory: Path,
+    mapping: dict[str, str],
+) -> None:
+    _validate_existing_directory(media_root, output_directory)
+    _rollback_filename_items(output_directory, list(mapping.items()))
+
+
+def _rollback_filename_items(
+    output_directory: Path,
+    items: list[tuple[str, str]],
+) -> None:
+    for old_name, new_name in reversed(items):
+        old_path = output_directory / old_name
+        new_path = output_directory / new_name
+        if old_path.exists() and new_path.exists():
+            if os.path.samefile(old_path, new_path):
+                os.unlink(new_path)
+                continue
+            raise BackupError("FILENAME_MIGRATION_ROLLBACK_CONFLICT")
+        if old_path.exists():
+            continue
+        if not new_path.exists() or new_path.is_symlink():
+            raise BackupError("FILENAME_MIGRATION_ROLLBACK_MISSING")
+        os.link(new_path, old_path, follow_symlinks=False)
+        os.unlink(new_path)
+    _fsync_directory(output_directory)
+
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        # Windows does not expose directory handles through os.open; the target
+        # Home Assistant runtime is Linux, where directory fsync is mandatory.
+        return
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _resolve_without_symlink(root: Path, candidate: Path) -> Path:

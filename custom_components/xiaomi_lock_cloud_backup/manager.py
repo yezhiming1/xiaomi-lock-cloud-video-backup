@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from functools import partial
 import logging
 from pathlib import Path
@@ -14,7 +14,11 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.storage import Store
 
 from .cloud import (
@@ -36,8 +40,14 @@ from .const import (
 from .hls import download_hls_once, inspect_local_output
 from .models import BackupError, CloudEvent, CloudTarget
 from .paths import (
+    build_filename_migration,
+    current_filename,
     ensure_output_directory,
+    is_legacy_managed_filename,
+    is_managed_filename,
+    migrate_managed_filenames,
     resolve_output_directory,
+    rollback_managed_filenames,
     safe_managed_path,
     unlink_managed_file,
 )
@@ -91,6 +101,8 @@ class BackupManager:
         self._state: BackupState | None = None
         self._lock = asyncio.Lock()
         self._remove_schedule: Any = None
+        self._remove_event_listener: Any = None
+        self._cancel_event_delay: Any = None
         self._accept_runs = True
 
     async def async_initialize(self) -> None:
@@ -102,6 +114,7 @@ class BackupManager:
         else:
             self._state = BackupState.from_dict(loaded)
         self._install_schedule()
+        self._install_event_triggers()
 
     async def async_shutdown(self) -> bool:
         """Stop new work only when no media operation is still running."""
@@ -112,6 +125,12 @@ class BackupManager:
         if self._remove_schedule is not None:
             self._remove_schedule()
             self._remove_schedule = None
+        if self._remove_event_listener is not None:
+            self._remove_event_listener()
+            self._remove_event_listener = None
+        if self._cancel_event_delay is not None:
+            self._cancel_event_delay()
+            self._cancel_event_delay = None
         return True
 
     def safe_diagnostics(self) -> dict[str, object]:
@@ -123,6 +142,7 @@ class BackupManager:
             "seen_count": len(state.seen),
             "pending_failure_count": len(state.failures),
             "managed_file_count": len(state.managed_files),
+            "reserved_file_count": len(state.pending_files),
             "consecutive_run_failure_count": state.consecutive_run_failures,
             "status_report_count": state.status_report_sequence,
             "status_journal_enabled": True,
@@ -132,6 +152,8 @@ class BackupManager:
             "retention_days": self.options.retention_days,
             "max_downloads_per_run": self.options.max_downloads_per_run,
             "schedule_configured": True,
+            "event_trigger_count": len(self.options.event_entity_ids),
+            "event_delay_seconds": self.options.event_delay_seconds,
         }
 
     def _install_schedule(self) -> None:
@@ -161,6 +183,113 @@ class BackupManager:
             _LOGGER.error("Scheduled backup failed with code=%s", exc.code)
         except Exception:
             _LOGGER.error("Scheduled backup failed with code=BACKUP_UNEXPECTED")
+
+    def _install_event_triggers(self) -> None:
+        if self._remove_event_listener is not None:
+            self._remove_event_listener()
+            self._remove_event_listener = None
+        if not self.options.event_entity_ids:
+            return
+
+        @callback
+        def event_changed(event: Any) -> None:
+            old_state = event.data.get("old_state")
+            new_state = event.data.get("new_state")
+            if (
+                old_state is None
+                or new_state is None
+                or str(old_state.state) in {"unknown", "unavailable"}
+                or str(new_state.state) in {"unknown", "unavailable"}
+            ):
+                return
+            if (
+                old_state.state == new_state.state
+                and old_state.attributes == new_state.attributes
+            ):
+                return
+            if self._cancel_event_delay is not None:
+                self._cancel_event_delay()
+            self._cancel_event_delay = async_call_later(
+                self.hass,
+                self.options.event_delay_seconds,
+                self._event_delay_elapsed,
+            )
+
+        self._remove_event_listener = async_track_state_change_event(
+            self.hass,
+            self.options.event_entity_ids,
+            event_changed,
+        )
+
+    @callback
+    def _event_delay_elapsed(self, _now: datetime) -> None:
+        self._cancel_event_delay = None
+        self.hass.async_create_task(
+            self._async_event_triggered_run(),
+            f"xiaomi_lock_cloud_backup_event_{self.entry.entry_id}",
+        )
+
+    async def _async_event_triggered_run(self) -> None:
+        try:
+            await self.async_run(dry_run=False)
+        except BackupError as exc:
+            _LOGGER.error("Event backup failed with code=%s", exc.code)
+        except Exception:
+            _LOGGER.error("Event backup failed with code=BACKUP_UNEXPECTED")
+
+    async def async_migrate_filenames(self, *, dry_run: bool) -> dict[str, object]:
+        """Migrate legacy managed names without exposing names or event times."""
+        if not self._accept_runs:
+            raise BackupError("BACKUP_MANAGER_STOPPED")
+        async with self._lock:
+            state = self._require_state()
+            output_directory = await self.hass.async_add_executor_job(
+                resolve_output_directory,
+                self.media_root,
+                self.options.output_subdirectory,
+            )
+            filenames = await self.hass.async_add_executor_job(
+                _managed_filename_inventory,
+                output_directory,
+            )
+            mapping = build_filename_migration(filenames)
+            legacy_state = {
+                name for name in state.managed_files if is_legacy_managed_filename(name)
+            }
+            if set(mapping) != legacy_state:
+                raise BackupError("FILENAME_MIGRATION_STATE_MISMATCH")
+            result: dict[str, object] = {
+                "status": "dry_run_ok" if dry_run else "migrated",
+                "dry_run": dry_run,
+                "eligible": len(mapping),
+                "unchanged": len(filenames) - len(mapping),
+            }
+            if dry_run or not mapping:
+                return result
+            previous_state = state.to_dict()
+            await self.hass.async_add_executor_job(
+                migrate_managed_filenames,
+                self.media_root,
+                output_directory,
+                mapping,
+            )
+            try:
+                state.migrate_filenames(mapping)
+                await self._save_state()
+                stored = await self._store.async_load()
+                if stored != state.to_dict():
+                    raise BackupError("FILENAME_MIGRATION_STATE_VERIFY_FAILED")
+            except Exception:
+                self._state = BackupState.from_dict(previous_state)
+                await self.hass.async_add_executor_job(
+                    rollback_managed_filenames,
+                    self.media_root,
+                    output_directory,
+                    mapping,
+                )
+                await self._save_state()
+                raise
+            return result
 
     async def async_run(self, *, dry_run: bool) -> dict[str, object]:
         """Run one serialized backup and return counts plus fixed status codes."""
@@ -626,7 +755,12 @@ class BackupManager:
         state = self._require_state()
         for event in selected_events:
             digest = event_digest(target.model, event.file_id)
-            filename = _output_filename(event.event_time_ms, digest)
+            filename = await self._async_reserve_filename(
+                state,
+                context.output_directory,
+                event.event_time_ms,
+                digest,
+            )
             try:
                 state.require_managed_capacity(filename)
             except BackupError as exc:
@@ -697,6 +831,39 @@ class BackupManager:
             finally:
                 playlist_url = ""
 
+    async def _async_reserve_filename(
+        self,
+        state: BackupState,
+        output_directory: Path,
+        event_time_ms: int,
+        digest: str,
+    ) -> str:
+        existing = state.filename_for_event(digest)
+        if existing is not None:
+            return existing
+        occupied = set(state.managed_files) | set(state.pending_files.values())
+        for sequence in range(1, 1000):
+            candidate = current_filename(event_time_ms, sequence)
+            if candidate in occupied:
+                continue
+            output_path = await self.hass.async_add_executor_job(
+                safe_managed_path,
+                self.media_root,
+                output_directory,
+                candidate,
+            )
+            if await self.hass.async_add_executor_job(output_path.exists):
+                continue
+            state.require_managed_capacity(candidate)
+            state.reserve_filename(digest, candidate)
+            try:
+                await self._save_state()
+            except Exception:
+                state.pending_files.pop(digest, None)
+                raise
+            return candidate
+        raise BackupError("FILENAME_COLLISION_CAPACITY_REACHED")
+
     def _apply_final_error(self, counts: _RunCounts) -> None:
         state = self._require_state()
         if not counts.failed and counts.retention_failures:
@@ -728,7 +895,7 @@ class BackupManager:
                     output_directory,
                     filename,
                 )
-                state.managed_files.pop(filename, None)
+                state.remove_managed_file(filename)
                 if was_deleted:
                     deleted += 1
                 else:
@@ -749,12 +916,21 @@ class BackupManager:
 
 
 def _output_filename(event_time_ms: int, digest: str) -> str:
-    timestamp = datetime.fromtimestamp(
-        event_time_ms / 1000,
-        tz=timezone.utc,
-    ).strftime("%Y%m%dT%H%M%S")
-    milliseconds = event_time_ms % 1000
-    return f"xiaomi_lock_{timestamp}{milliseconds:03d}Z_{digest[:12]}.mp4"
+    del digest
+    return current_filename(event_time_ms)
+
+
+def _managed_filename_inventory(output_directory: Path) -> list[str]:
+    if output_directory.is_symlink() or not output_directory.is_dir():
+        raise BackupError("OUTPUT_DIRECTORY_UNSAFE")
+    result: list[str] = []
+    for path in output_directory.iterdir():
+        if not is_managed_filename(path.name):
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise BackupError("MANAGED_FILE_UNSAFE")
+        result.append(path.name)
+    return sorted(result)
 
 
 def _find_media_toolchain() -> tuple[str | None, str | None]:

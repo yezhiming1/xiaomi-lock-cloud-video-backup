@@ -8,6 +8,8 @@
         "data": {
           "target_model": "Target model",
           "schedule_time": "Daily local time (HH:MM:SS)",
+          "event_entity_ids": "Doorway passed and linger event entities",
+          "event_delay_seconds": "Delay after an event (seconds)",
           "output_subdirectory": "Subdirectory below /media",
           "retention_days": "Retention days (0 disables automatic deletion)",
           "max_downloads_per_run": "Maximum downloads per run",
@@ -29,6 +31,8 @@
         "title": "Backup options",
         "data": {
           "schedule_time": "Daily local time (HH:MM:SS)",
+          "event_entity_ids": "Doorway passed and linger event entities",
+          "event_delay_seconds": "Delay after an event (seconds)",
           "retention_days": "Retention days (0 disables automatic deletion)",
           "max_downloads_per_run": "Maximum downloads per run",
           "keep_audio": "Keep audio when present"
@@ -61,6 +65,16 @@
         "max_downloads": {
           "name": "Maximum downloads",
           "description": "Maximum recordings selected during this serialized run."
+        }
+      }
+    },
+    "migrate_filenames": {
+      "name": "Migrate recording filenames",
+      "description": "Rename legacy managed recordings to Beijing-time names without overwriting files.",
+      "fields": {
+        "dry_run": {
+          "name": "Dry run",
+          "description": "Validate the migration and return counts without renaming files or updating state."
         }
       }
     }
