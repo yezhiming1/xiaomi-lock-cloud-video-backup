@@ -52,12 +52,21 @@ async def async_find_single_target(hass: Any, model: str) -> CloudTarget:
     """Find exactly one model match without reading Xiaomi auth storage."""
     xiaomi_data = getattr(hass, "data", {}).get(XIAOMI_MIOT_DOMAIN)
     sessions = xiaomi_data.get("sessions") if isinstance(xiaomi_data, dict) else None
-    if not isinstance(sessions, dict) or not sessions:
+    clouds = list(sessions.values()) if isinstance(sessions, dict) else []
+    # Miot 1.1.5 keeps account-entry clouds outside the legacy sessions cache.
+    # Read only existing runtime aliases; never construct/login a cloud here.
+    if isinstance(xiaomi_data, dict):
+        for runtime in xiaomi_data.values():
+            if isinstance(runtime, dict):
+                cloud = runtime.get("xiaomi_cloud")
+                if cloud is not None and _supports_required_cloud_api(cloud):
+                    clouds.append(cloud)
+    if not clouds:
         raise BackupError("XIAOMI_MIOT_SESSION_UNAVAILABLE")
 
     matches: dict[str, CloudTarget] = {}
     visited: set[int] = set()
-    for cloud in sessions.values():
+    for cloud in clouds:
         if cloud is None or id(cloud) in visited:
             continue
         visited.add(id(cloud))
