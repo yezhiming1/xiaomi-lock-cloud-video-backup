@@ -17,8 +17,11 @@ atomically publishes validated MP4 files.
 
 ## Status
 
-- Current release: `V0.0.8` / integration manifest `0.0.8`. The target is
-  running V0.0.8 after a verified HACS install and Home Assistant restart.
+- Current release: `V0.0.9` / integration manifest `0.0.9`. The target is
+  running V0.0.9 after a verified HACS install and Home Assistant restart.
+- V0.0.9 supports Xiaomi Miot 1.1.5 account-entry cloud aliases alongside
+  legacy sessions. Target acceptance downloaded 18 pending recordings with
+  zero failures or deletions; all 187 local videos completed consumer processing.
 - V0.0.8 can listen to explicitly selected Home Assistant `event.*` entities,
   debounce related changes, and run an incremental backup 120 seconds after the
   last change. The daily 03:30 run remains a reconciliation path.
@@ -63,9 +66,9 @@ atomically publishes validated MP4 files.
 
 ## Requirements
 
-- Home Assistant `2026.8.2` is the pinned validation target. Other versions are
-  currently unverified.
-- [`hass-xiaomi-miot`](https://github.com/al-one/hass-xiaomi-miot) `1.1.4` with
+- Home Assistant `2026.8.2` is the pinned validation target; the deployed
+  `2026.9.4` target also passed the current download acceptance.
+- [`hass-xiaomi-miot`](https://github.com/al-one/hass-xiaomi-miot) `1.1.5` with
   a working Xiaomi cloud session already loaded in Home Assistant.
 - `ffmpeg` and `ffprobe` available inside the Home Assistant runtime.
 - An existing writable parent beneath `/media`. Configure any network storage
