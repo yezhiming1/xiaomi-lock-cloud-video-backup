@@ -84,7 +84,7 @@ async def main() -> None:
         ).read_text(encoding="utf-8")
     )
     assert manifest["domain"] == DOMAIN
-    assert manifest["version"] == INTEGRATION_VERSION == "0.0.8"
+    assert manifest["version"] == INTEGRATION_VERSION == "0.0.9"
 
     candidate = default_options()
     candidate[CONF_RETENTION_DAYS] = "0"
@@ -114,16 +114,17 @@ async def main() -> None:
     await hass.async_start()
     integration = await loader.async_get_integration(hass, DOMAIN)
     assert integration.name == "Xiaomi Lock Cloud Video Backup"
-    assert integration.version == "0.0.8"
+    assert integration.version == "0.0.9"
 
     cloud = FixtureCloud()
     hass.data["xiaomi_miot"] = {
-        "sessions": {"fixture": cloud},
+        "sessions": {},
+        "fixture_account_entry": {"xiaomi_cloud": cloud},
         "entities": {"lock.fixture": FixtureEntity(cloud)},
     }
     assert await async_setup(hass, {})
     entry = ConfigEntry(
-        data=default_options(),
+        data=candidate,
         disabled_by=None,
         discovery_keys={},
         domain=DOMAIN,
@@ -221,7 +222,7 @@ async def main() -> None:
 
     manager = hass.data[DOMAIN][entry.entry_id]
     diagnostics = manager.safe_diagnostics()
-    assert diagnostics["integration_version"] == "0.0.8"
+    assert diagnostics["integration_version"] == "0.0.9"
     assert diagnostics["history_complete"] is False
     assert diagnostics["history_pages_completed"] == 0
     assert diagnostics["event_trigger_count"] == 2

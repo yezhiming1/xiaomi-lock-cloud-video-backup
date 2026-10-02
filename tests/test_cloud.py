@@ -85,6 +85,84 @@ class FakeEntity:
 
 
 class CloudTests(unittest.IsolatedAsyncioTestCase):
+    async def test_account_entry_cloud_with_empty_legacy_sessions(self) -> None:
+        cloud = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-device"}])
+        hass = FakeHass({})
+        hass.data["xiaomi_miot"]["fixture-entry"] = {"xiaomi_cloud": cloud}
+        target = await cloud_module.async_find_single_target(hass, "xiaomi.lock.s1")
+        self.assertIs(cloud, target.cloud)
+
+    async def test_account_entry_cloud_without_legacy_sessions_key(self) -> None:
+        cloud = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-device"}])
+        hass = FakeHass({})
+        del hass.data["xiaomi_miot"]["sessions"]
+        hass.data["xiaomi_miot"]["fixture-entry"] = {"xiaomi_cloud": cloud}
+        self.assertIs(cloud, (await cloud_module.async_find_single_target(
+            hass, "xiaomi.lock.s1"
+        )).cloud)
+
+    async def test_duplicate_entry_alias_is_queried_once(self) -> None:
+        cloud = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-device"}])
+        calls = []
+        original = cloud.async_get_devices
+        async def counted(renew=False):
+            calls.append(renew)
+            return await original(renew=renew)
+        cloud.async_get_devices = counted
+        hass = FakeHass({"fixture": cloud})
+        hass.data["xiaomi_miot"]["fixture-entry"] = {"xiaomi_cloud": cloud}
+        await cloud_module.async_find_single_target(hass, "xiaomi.lock.s1")
+        self.assertEqual([False], calls)
+
+    async def test_entry_cloud_entity_fallback_and_unrelated_rejection(self) -> None:
+        cloud = FakeCloud([])
+        unrelated = FakeCloud([])
+        hass = FakeHass({}, {"fixture": FakeEntity(
+            "xiaomi.lock.s1", "fixture-device", cloud
+        )})
+        hass.data["xiaomi_miot"]["fixture-entry"] = {"xiaomi_cloud": cloud}
+        self.assertIs(cloud, (await cloud_module.async_find_single_target(
+            hass, "xiaomi.lock.s1"
+        )).cloud)
+        hass.data["xiaomi_miot"]["entities"]["fixture"].xiaomi_cloud = unrelated
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(hass, "xiaomi.lock.s1")
+        self.assertEqual("TARGET_MATCH_NONE", raised.exception.code)
+
+    async def test_account_entries_still_reject_multiple_targets(self) -> None:
+        hass = FakeHass({})
+        for key in ("fixture-a", "fixture-b"):
+            hass.data["xiaomi_miot"][key] = {"xiaomi_cloud": FakeCloud([
+                {"model": "xiaomi.lock.s1", "did": key}
+            ])}
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(hass, "xiaomi.lock.s1")
+        self.assertEqual("TARGET_MATCH_MULTIPLE", raised.exception.code)
+
+    async def test_invalid_entry_runtime_never_loads_credentials(self) -> None:
+        hass = FakeHass({})
+        hass.data["xiaomi_miot"].update({
+            "fixture-null": {"xiaomi_cloud": None},
+            "fixture-unsupported": {"xiaomi_cloud": object()},
+            "fixture-auth-like": {"service_token": "fixture-value"},
+            "fixture-list": [],
+        })
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(hass, "xiaomi.lock.s1")
+        self.assertEqual("XIAOMI_MIOT_SESSION_UNAVAILABLE", raised.exception.code)
+
+    async def test_entry_device_query_error_remains_fixed(self) -> None:
+        cloud = FakeCloud([])
+        async def failing(renew=False):
+            raise RuntimeError("fixture-private-detail")
+        cloud.async_get_devices = failing
+        hass = FakeHass({})
+        hass.data["xiaomi_miot"]["fixture-entry"] = {"xiaomi_cloud": cloud}
+        with self.assertRaises(models.BackupError) as raised:
+            await cloud_module.async_find_single_target(hass, "xiaomi.lock.s1")
+        self.assertEqual("CLOUD_DEVICE_QUERY_FAILED", raised.exception.code)
+        self.assertNotIn("fixture-private-detail", str(raised.exception))
+
     async def test_loaded_session_and_descending_pagination(self) -> None:
         cloud = FakeCloud([{"model": "xiaomi.lock.s1", "did": "fixture-device"}])
         target = await cloud_module.async_find_single_target(
